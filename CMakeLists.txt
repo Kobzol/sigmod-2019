@@ -11,10 +11,11 @@ set(SOURCE_FILES
         src/lib/record.h
         src/lib/sort/radix.cpp
         src/lib/io/io.cpp
-        src/lib/partition.cpp src/lib/partition.h)
+        src/lib/partition.cpp
+)
 
 add_library(sortlib STATIC ${SOURCE_FILES})
 
-add_executable(sort src/sort/main.cpp)
+add_executable(sort src/main.cpp)
 target_link_libraries(sort sortlib)
 target_include_directories(sort PRIVATE src/lib)

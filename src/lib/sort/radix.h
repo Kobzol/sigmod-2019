@@ -2,4 +2,5 @@
 
 #include "../record.h"
 
-void lsd_radix_sort(SortRecord* data, SortRecord* end);
+void lsd_radix_sort(SortRecord* data, size_t size);
+void msd_radix_sort(SortRecord* data, size_t size);

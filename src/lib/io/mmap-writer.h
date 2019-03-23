@@ -9,6 +9,7 @@
 #include "../util.h"
 #include "../record.h"
 
+
 class MmapWriter {
 public:
     explicit MmapWriter(const char* path, size_t size): size(size)
@@ -20,12 +21,14 @@ public:
         CHECK_NEG_ERROR(ftruncate64(fd, size));
 
         this->data = reinterpret_cast<Record*>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
-        CHECK_NULL_ERROR(this->data);
+        CHECK_NEG_ERROR((ssize_t) this->data);
         CHECK_NEG_ERROR(fclose(file));
     }
     ~MmapWriter()
     {
+        Timer timerUnmap;
         CHECK_NEG_ERROR(munmap(this->data, this->size));
+        timerUnmap.print("Unmap");
     }
     DISABLE_COPY(MmapWriter);
     DISABLE_MOVE(MmapWriter);

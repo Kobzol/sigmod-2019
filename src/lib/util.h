@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "timer.h"
+#include "record.h"
 
 #define CHECK_NEG_ERROR(ret)\
 if ((ret) < 0)\
@@ -36,3 +37,4 @@ block;\
 timer##__LINE__.print(name);
 
 size_t file_size(FILE* file);
+bool is_sorted(const Record* records, size_t count);

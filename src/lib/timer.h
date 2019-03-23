@@ -4,7 +4,7 @@
 #include <ctime>
 #include <iostream>
 
-using TimerClock = std::chrono::steady_clock;
+using TimerClock = std::chrono::system_clock;
 
 class Timer
 {

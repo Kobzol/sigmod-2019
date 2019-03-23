@@ -1,12 +1,34 @@
 #include "radix.h"
+#include "../thirdparty/kxsort.h"
 
 #include <vector>
 #include <cassert>
+#include <atomic>
+#include <byteswap.h>
 
-void lsd_radix_sort(SortRecord* data, SortRecord* end)
+struct RadixTraitsRowSortRecord
 {
-    size_t size = end - data;
+    static const int nBytes = KEY_SIZE;
 
+    int kth_byte(const SortRecord& x, int k) {
+        return x.header[KEY_SIZE - 1 - k] & ((unsigned char) 0xFF);
+    }
+    bool compare(const SortRecord& lhs, const SortRecord& rhs) {
+        const uint64_t a = bswap_64(*reinterpret_cast<const uint64_t*>(&lhs.header[0]));
+        const uint64_t b = bswap_64(*reinterpret_cast<const uint64_t*>(&rhs.header[0]));
+
+        if (a == b)
+        {
+            const uint16_t c = bswap_16(*reinterpret_cast<const uint16_t*>(&lhs.header[8]));
+            const uint16_t d = bswap_16(*reinterpret_cast<const uint16_t*>(&rhs.header[8]));
+            return c < d;
+        }
+        return a < b;
+    }
+};
+
+void lsd_radix_sort(SortRecord* data, size_t size)
+{
     int passes = 10;
 
     std::vector<SortRecord> buffer(size);
@@ -49,4 +71,9 @@ void lsd_radix_sort(SortRecord* data, SortRecord* end)
     }
 
     assert(active == data);
+}
+
+void msd_radix_sort(SortRecord* data, size_t size)
+{
+    kx::radix_sort(data, data + size, RadixTraitsRowSortRecord());
 }
