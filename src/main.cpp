@@ -22,46 +22,72 @@ struct GroupTarget
 struct GroupData
 {
     uint32_t start;
-    std::atomic<uint32_t> count{0};
+    uint32_t count;
 };
 
-void create_sorted_records(const Record* input, SortRecord* output, size_t count, size_t threads)
+void create_sorted_records(const Record* input, SortRecord* output, ssize_t count, size_t threads)
 {
+    Timer timerGroupInit;
     constexpr int GROUP_COUNT = 64;
     auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[count]);
     std::vector<GroupData> groupData(GROUP_COUNT);
+    std::vector<std::vector<uint32_t>> counts(static_cast<size_t>(threads));
+
+    for (size_t i = 0; i < threads; i++)
+    {
+        counts[i].resize(static_cast<size_t>(GROUP_COUNT));
+    }
+    timerGroupInit.print("Group init");
 
     constexpr int divisor = 256 / GROUP_COUNT;
     const auto shift = static_cast<uint32_t >(std::ceil(std::log2(divisor)));
 
     Timer timerGroupCount;
-#pragma omp parallel for num_threads(threads)
-    for (size_t i = 0; i < count; i++)
+#pragma omp parallel num_threads(threads)
     {
-        auto groupIndex = input[i][0] >> shift;
-        assert(groupIndex < GROUP_COUNT);
-        targets[i].group = static_cast<uint32_t>(groupIndex);
-        targets[i].index = static_cast<uint32_t>(groupData[groupIndex].count.fetch_add(
-                1, std::memory_order::memory_order_relaxed));
+        auto thread_id = static_cast<size_t>(omp_get_thread_num());
+#pragma omp for
+        for (ssize_t i = 0; i < count; i++)
+        {
+            auto groupIndex = input[i][0] >> shift;
+            assert(groupIndex < GROUP_COUNT);
+            targets[i].group = static_cast<uint32_t>(groupIndex);
+            targets[i].index = static_cast<uint32_t>(counts[thread_id][groupIndex]++);
+        }
     }
 
-    for (int i = 1; i < GROUP_COUNT; i++)
+    for (size_t i = 0; i < GROUP_COUNT; i++)
     {
+        size_t groupCount = 0; // total number of items in this group
+        for (size_t t = 0; t < threads; t++)
+        {
+            auto offset = counts[t][i];
+            counts[t][i] = static_cast<uint32_t>(groupCount);
+            groupCount += offset;
+        }
+        groupData[i].count = static_cast<uint32_t>(groupCount);
+        uint32_t prevStart = i == 0 ? 0 : groupData[i - 1].start;
+        uint32_t prevCount = i == 0 ? 0 : groupData[i - 1].count;
+        groupData[i].start =  prevStart + prevCount;
+
         std::cerr << i << ": " << groupData[i].count << ", ";
-        groupData[i].start =
-                groupData[i - 1].start + groupData[i - 1].count.load(std::memory_order::memory_order_relaxed);
     }
+
     std::cerr << std::endl;
     timerGroupCount.print("Group count");
 
     Timer timerGroupDivide;
-#pragma omp parallel for num_threads(threads)
-    for (size_t i = 0; i < count; i++)
+#pragma omp parallel num_threads(threads)
     {
-        auto& group = groupData[targets[i].group];
-        auto targetIndex = group.start + targets[i].index;
-        output[targetIndex].header = *(reinterpret_cast<const Header*>(&input[i]));
-        output[targetIndex].index = static_cast<uint32_t>(i);
+        auto thread_id = static_cast<size_t>(omp_get_thread_num());
+#pragma omp for
+        for (ssize_t i = 0; i < count; i++)
+        {
+            auto& group = groupData[targets[i].group];
+            auto targetIndex = group.start + counts[thread_id][targets[i].group] + targets[i].index;
+            output[targetIndex].header = *(reinterpret_cast<const Header*>(&input[i]));
+            output[targetIndex].index = static_cast<uint32_t>(i);
+        }
     }
     timerGroupDivide.print("Group divide");
 
@@ -86,17 +112,17 @@ void sort(const std::string& infile, const std::string& outfile)
     auto size = reader.get_size();
     std::cerr << "File size: " << size << std::endl;
 
-    Timer timerGroup;
+    Timer timerSort;
     size_t num_tuples = size / TUPLE_SIZE;
-    std::vector<SortRecord> sort_buffer((unsigned long) num_tuples);
+    auto sort_buffer = std::unique_ptr<SortRecord[]>(new SortRecord[num_tuples]);
 
     auto buffer = reader.get_data();
-    create_sorted_records(buffer, sort_buffer.data(), num_tuples, threadCount);
+    create_sorted_records(buffer, sort_buffer.get(), num_tuples, threadCount);
 
-    timerGroup.print("Sort");
+    timerSort.print("Sort");
 
     Timer timerWrite;
-    write_mmap(buffer, sort_buffer.data(), num_tuples, outfile, threadCount);
+    write_mmap(buffer, sort_buffer.get(), num_tuples, outfile, threadCount);
 //    write_buffered(buffer, sort_buffer.data(), num_tuples, outfile, 2 * 10 * 1024 * 1024ull, threadCount);
     timerWrite.print("Write");
 }
