@@ -11,7 +11,7 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
                     size_t buffer_size, size_t threads)
 {
     int handle = open(output.c_str(), O_WRONLY | O_CREAT, 0666);
-    ftruncate64(handle, count * TUPLE_SIZE);
+    CHECK_NEG_ERROR(ftruncate64(handle, count * TUPLE_SIZE));
 
     auto buffer = std::unique_ptr<Record[]>(new Record[buffer_size]);
 

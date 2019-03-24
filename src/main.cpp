@@ -6,6 +6,7 @@
 #include <cstring>
 #include <memory>
 #include <atomic>
+#include <queue>
 
 #include <timer.h>
 #include <cmath>
@@ -13,6 +14,9 @@
 #include <sort/radix.h>
 #include <io/io.h>
 #include <omp.h>
+#include <io/mmap-writer.h>
+#include "settings.h"
+
 
 struct GroupTarget
 {
@@ -25,9 +29,19 @@ struct GroupData
     uint32_t count;
 };
 
-void create_sorted_records(const Record* input, SortRecord* output, ssize_t count, size_t threads)
+struct FileRecord {
+    std::string name;
+    size_t count = 0;
+    size_t offset = 0;
+};
+
+static void sort_inmemory(const Record* input, size_t size, const std::string& outfile, size_t threads)
 {
     Timer timerGroupInit;
+
+    ssize_t count = size / TUPLE_SIZE;
+    auto output = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
+
     constexpr int GROUP_COUNT = 64;
     auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[count]);
     std::vector<GroupData> groupData(GROUP_COUNT);
@@ -96,12 +110,80 @@ void create_sorted_records(const Record* input, SortRecord* output, ssize_t coun
     for (size_t i = 0; i < GROUP_COUNT; i++)
     {
         auto& group = groupData[i];
-        msd_radix_sort(output + group.start, group.count);
+        msd_radix_sort(output.get() + group.start, group.count);
     }
     timerGroupSort.print("Group sort");
+
+    Timer timerWrite;
+    write_mmap(input, output.get(), static_cast<size_t>(count), outfile, threads);
+//    write_buffered(input, output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
+    timerWrite.print("Write");
 }
 
-void sort(const std::string& infile, const std::string& outfile)
+static void merge_files(std::vector<FileRecord>& files, const std::string& outfile, size_t size)
+{
+    ssize_t count = size / TUPLE_SIZE;
+
+    MmapWriter writer(outfile.c_str(), size);
+    std::vector<MmapReader> readers;
+    std::vector<size_t> offsets(files.size());
+    for (auto& out : files)
+    {
+        readers.emplace_back(out.name.c_str());
+    }
+
+    auto cmp = [&readers, &files](int lhs, int rhs) {
+        auto lo = files[lhs].offset;
+        auto ro = files[rhs].offset;
+        return *(readers[lhs].get_data() + lo) > *(readers[rhs].get_data() + ro);
+    };
+
+    auto* out = writer.get_data();
+    std::priority_queue<int, std::vector<int>, decltype(cmp)> heap(cmp);
+
+    for (size_t i = 0; i < readers.size(); i++)
+    {
+        heap.push(i);
+    }
+
+    for (ssize_t i = 0; i < count; i++)
+    {
+        auto source = heap.top();
+        heap.pop();
+        *out++ = *(readers[source].get_data() + files[source].offset++);
+        if (files[source].offset < files[source].count)
+        {
+            heap.push(source);
+        }
+    }
+}
+
+static void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
+{
+    size_t count = size / TUPLE_SIZE;
+    std::vector<FileRecord> files;
+    size_t offset = 0;
+
+    while (offset < count)
+    {
+        Timer timer;
+        size_t partialCount = std::min(count - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
+        MmapReader reader(infile.c_str(), offset * TUPLE_SIZE, partialCount * TUPLE_SIZE);
+
+        std::string out = "out-" + std::to_string(files.size());
+        std::cerr << "Writing " << partialCount << " records to " << out << std::endl;
+        sort_inmemory(reader.get_data() + offset, partialCount * TUPLE_SIZE, out, threads);
+        files.push_back(FileRecord{out, partialCount, 0});
+        offset += partialCount;
+        timer.print("Sort file");
+    }
+
+    Timer timer;
+    merge_files(files, outfile, size);
+    timer.print("Merge files");
+}
+
+static void sort(const std::string& infile, const std::string& outfile)
 {
     auto threadCount = static_cast<size_t>(omp_get_max_threads());
 
@@ -112,23 +194,22 @@ void sort(const std::string& infile, const std::string& outfile)
     auto size = reader.get_size();
     std::cerr << "File size: " << size << std::endl;
 
-    Timer timerSort;
-    size_t num_tuples = size / TUPLE_SIZE;
-    auto sort_buffer = std::unique_ptr<SortRecord[]>(new SortRecord[num_tuples]);
-
-    auto buffer = reader.get_data();
-    create_sorted_records(buffer, sort_buffer.get(), num_tuples, threadCount);
-
-    timerSort.print("Sort");
-
-    Timer timerWrite;
-    write_mmap(buffer, sort_buffer.get(), num_tuples, outfile, threadCount);
-//    write_buffered(buffer, sort_buffer.data(), num_tuples, outfile, 2 * 10 * 1024 * 1024ull, threadCount);
-    timerWrite.print("Write");
+    if (size <= LIMIT_IN_MEMORY_SORT)
+    {
+        std::cerr << "Sort in-memory" << std::endl;
+        sort_inmemory(reader.get_data(), size, outfile, threadCount);
+    }
+    else
+    {
+        std::cerr << "Sort external" << std::endl;
+        sort_external(infile, size, outfile, threadCount);
+    }
 }
 
 int main(int argc, char** argv)
 {
+    static_assert(EXTERNAL_SORT_PARTIAL_COUNT % TUPLE_SIZE == 0, "Partial sort size must be a multiple of tuple size");
+
     if (argc != 3)
     {
         std::cout << "USAGE: " << argv[0] << " [in-file] [outfile]" << std::endl;
