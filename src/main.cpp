@@ -7,14 +7,16 @@
 #include <memory>
 #include <atomic>
 #include <queue>
-
-#include <timer.h>
 #include <cmath>
-#include <io/mmap-reader.h>
-#include <sort/radix.h>
-#include <io/io.h>
 #include <omp.h>
+
+#include <compare.h>
+#include <timer.h>
+#include <io/io.h>
+#include <io/mmap-reader.h>
 #include <io/mmap-writer.h>
+#include <io/memory-reader.h>
+#include <sort/radix.h>
 #include "settings.h"
 
 
@@ -84,10 +86,10 @@ static void sort_inmemory(const Record* input, size_t size, const std::string& o
         uint32_t prevCount = i == 0 ? 0 : groupData[i - 1].count;
         groupData[i].start =  prevStart + prevCount;
 
-        std::cerr << i << ": " << groupData[i].count << ", ";
+//        std::cerr << i << ": " << groupData[i].count << ", ";
     }
 
-    std::cerr << std::endl;
+//    std::cerr << std::endl;
     timerGroupCount.print("Group count");
 
     Timer timerGroupDivide;
@@ -120,22 +122,19 @@ static void sort_inmemory(const Record* input, size_t size, const std::string& o
     timerWrite.print("Write");
 }
 
-static void merge_files(std::vector<FileRecord>& files, const std::string& outfile, size_t size)
+template <typename Reader>
+static void merge_files(std::vector<FileRecord>& files, std::vector<Reader>& readers,
+        const std::string& outfile, size_t size)
 {
     ssize_t count = size / TUPLE_SIZE;
 
     MmapWriter writer(outfile.c_str(), size);
-    std::vector<MmapReader> readers;
     std::vector<size_t> offsets(files.size());
-    for (auto& out : files)
-    {
-        readers.emplace_back(out.name.c_str());
-    }
 
     auto cmp = [&readers, &files](int lhs, int rhs) {
         auto lo = files[lhs].offset;
         auto ro = files[rhs].offset;
-        return *(readers[lhs].get_data() + lo) > *(readers[rhs].get_data() + ro);
+        return !cmp_record(*(readers[lhs].get_data() + lo), *(readers[rhs].get_data() + ro));
     };
 
     auto* out = writer.get_data();
@@ -170,16 +169,22 @@ static void sort_external(const std::string& infile, size_t size, const std::str
         size_t partialCount = std::min(count - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
         MmapReader reader(infile.c_str(), offset * TUPLE_SIZE, partialCount * TUPLE_SIZE);
 
-        std::string out = "out-" + std::to_string(files.size());
+        std::string out = WRITE_LOCATION + "/out-" + std::to_string(files.size());
         std::cerr << "Writing " << partialCount << " records to " << out << std::endl;
-        sort_inmemory(reader.get_data() + offset, partialCount * TUPLE_SIZE, out, threads);
+        sort_inmemory(reader.get_data(), partialCount * TUPLE_SIZE, out, threads);
         files.push_back(FileRecord{out, partialCount, 0});
         offset += partialCount;
         timer.print("Sort file");
     }
 
+    std::vector<MmapReader> readers;
+    for (auto& out : files)
+    {
+        readers.emplace_back(out.name.c_str());
+    }
+
     Timer timer;
-    merge_files(files, outfile, size);
+    merge_files<MmapReader>(files, readers, outfile, size);
     timer.print("Merge files");
 }
 

@@ -6,6 +6,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -fopenmp -march=native -fno-rtti -Wal
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
+OPTION(REAL_RUN "Real run" OFF)
+if(REAL_RUN)
+    ADD_DEFINITIONS(-DREAL_RUN)
+endif()
+
 set(SOURCE_FILES
         src/lib/util.cpp
         src/lib/record.h

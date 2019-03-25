@@ -1,9 +1,10 @@
 #pragma once
 
 #include <byteswap.h>
+
 #include "record.h"
 
-inline bool operator<(const Header& lhs, const Header& rhs)
+inline bool cmp_header(const Header& lhs, const Header& rhs)
 {
     const uint64_t a = bswap_64(*reinterpret_cast<const uint64_t*>(&lhs[0]));
     const uint64_t b = bswap_64(*reinterpret_cast<const uint64_t*>(&rhs[0]));
@@ -17,7 +18,7 @@ inline bool operator<(const Header& lhs, const Header& rhs)
     return a < b;
 }
 
-inline bool operator<(const Record& lhs, const Record& rhs)
+inline bool cmp_record(const Record& lhs, const Record& rhs)
 {
     return *(reinterpret_cast<const Header*>(&lhs)) < *(reinterpret_cast<const Header*>(&rhs));
 }

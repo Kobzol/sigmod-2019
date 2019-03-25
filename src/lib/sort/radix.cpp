@@ -16,7 +16,7 @@ struct RadixTraitsRowSortRecord
         return x.header[KEY_SIZE - 1 - k] & ((unsigned char) 0xFF);
     }
     bool compare(const SortRecord& lhs, const SortRecord& rhs) {
-        return lhs.header < rhs.header;
+        return cmp_header(lhs.header, rhs.header);
     }
 };
 
