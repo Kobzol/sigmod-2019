@@ -20,7 +20,7 @@ public:
         CHECK_NEG_ERROR(fd);
         CHECK_NEG_ERROR(ftruncate64(fd, size));
 
-        this->data = reinterpret_cast<Record*>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+        this->data = reinterpret_cast<Record*>(mmap(nullptr, size, PROT_WRITE, MAP_SHARED, fd, 0));
         CHECK_NEG_ERROR((ssize_t) this->data);
         CHECK_NEG_ERROR(fclose(file));
     }

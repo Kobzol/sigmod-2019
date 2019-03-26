@@ -30,7 +30,7 @@ public:
 
         this->file = fopen(path, "rb");
         CHECK_NULL_ERROR(file);
-        this->mmapData = reinterpret_cast<Record*>(mmap(nullptr, this->size, PROT_READ, MAP_SHARED, fileno(this->file), start));
+        this->mmapData = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_READ, MAP_SHARED, fileno(this->file), start));
         CHECK_NEG_ERROR((ssize_t) this->mmapData);
         this->readData = reinterpret_cast<Record*>(reinterpret_cast<char*>(this->mmapData) + offset);
     }

@@ -10,26 +10,55 @@
 
 class FileWriter {
 public:
-    explicit FileWriter(const char* path, size_t size) : size(size)
+    explicit FileWriter(const char* path)
     {
-        this->file = fopen(path, "wb");
-        CHECK_NULL_ERROR(this->file);
+        this->file = open(path, O_WRONLY | O_CREAT, 0666);
+        CHECK_NEG_ERROR(this->file);
     }
     ~FileWriter()
     {
-        CHECK_NEG_ERROR(fflush(this->file));
-        CHECK_NEG_ERROR(fclose(this->file));
+        CHECK_NEG_ERROR(close(this->file));
     }
     DISABLE_COPY(FileWriter);
     DISABLE_MOVE(FileWriter);
 
-    void write(const Record* data, size_t size = 0)
+    void preallocate(size_t size)
     {
-        if (size == 0) size = this->size;
-        CHECK_NEG_ERROR(fwrite(data, size, 1, this->file));
+        CHECK_NEG_ERROR(ftruncate64(this->file, size));
+    }
+    void seek(size_t offset)
+    {
+        CHECK_NEG_ERROR(lseek64(this->file, offset, SEEK_SET));
+    }
+
+    void write(const Record* data, size_t count)
+    {
+        size_t size = count * TUPLE_SIZE;
+        size_t total = 0;
+        auto input = reinterpret_cast<const char*>(data);
+
+        while (total < size)
+        {
+            ssize_t written = ::write(this->file, input + total, size - total);
+            CHECK_NEG_ERROR(written);
+            total += written;
+        }
+    }
+    void write_at(const Record* data, size_t count, size_t offset)
+    {
+        size_t size = count * TUPLE_SIZE;
+        offset *= TUPLE_SIZE;
+        size_t total = 0;
+        auto input = reinterpret_cast<const char*>(data);
+
+        while (total < size)
+        {
+            ssize_t written = ::pwrite(this->file, input + total, size - total, offset + total);
+            CHECK_NEG_ERROR(written);
+            total += written;
+        }
     }
 
 private:
-    size_t size;
-    FILE* file;
+    int file;
 };
