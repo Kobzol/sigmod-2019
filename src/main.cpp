@@ -3,6 +3,7 @@
 
 #include <timer.h>
 #include <io/mmap-reader.h>
+#include <io/memory-reader.h>
 #include <sort/sort.h>
 #include <vector>
 #include "settings.h"
@@ -11,15 +12,17 @@ static void sort(const std::string& infile, const std::string& outfile)
 {
     auto threadCount = static_cast<size_t>(omp_get_max_threads());
 
-    Timer timerLoad;
-    MmapReader reader(infile.c_str());
-    timerLoad.print("Read");
+    MemoryReader reader(infile.c_str());
 
     auto size = reader.get_size();
     std::cerr << "File size: " << size << std::endl;
 
     if (size <= LIMIT_IN_MEMORY_SORT)
     {
+        Timer timerLoad;
+        reader.read(size);
+        timerLoad.print("Read");
+
         std::cerr << "Sort in-memory" << std::endl;
         sort_inmemory(reader.get_data(), size, outfile, threadCount);
     }

@@ -12,32 +12,26 @@ class MemoryReader {
 public:
     explicit MemoryReader(const char* path)
     {
-        FILE* file = fopen(path, "rb");
-        CHECK_NULL_ERROR(file);
-        this->size = file_size(file);
-
-        this->data = std::unique_ptr<Record[]>(new Record[this->size / TUPLE_SIZE]);
-        if (fread(this->data.get(), this->size, 1, file) == 0) assert(false);
-
-        CHECK_NEG_ERROR(fclose(file));
-    }
-    explicit MemoryReader(const char* path, size_t offset, size_t size): size(size)
-    {
-        FILE* file = fopen(path, "rb");
-        CHECK_NULL_ERROR(file);
-
-        this->data = std::unique_ptr<Record[]>(new Record[this->size / TUPLE_SIZE]);
-        CHECK_NEG_ERROR(fseek(file, offset, SEEK_SET));
-        if (fread(this->data.get(), this->size, 1, file) == 0) assert(false);
-
-        CHECK_NEG_ERROR(fclose(file));
+        this->file = fopen(path, "rb");
+        CHECK_NULL_ERROR(this->file);
+        this->size = file_size(this->file);
     }
     DISABLE_COPY(MemoryReader);
+    ~MemoryReader()
+    {
+        CHECK_NEG_ERROR(fclose(this->file));
+    }
 
     MemoryReader(MemoryReader&& other) noexcept
     {
         this->data = std::move(other.data);
         this->size = other.size;
+    }
+
+    void read(size_t size)
+    {
+        this->data = std::unique_ptr<Record[]>(new Record[size / TUPLE_SIZE]);
+        if (fread(this->data.get(), size, 1, file) == 0) assert(false);
     }
 
     size_t get_size() const
@@ -51,6 +45,7 @@ public:
     }
 
 private:
+    FILE* file = nullptr;
     size_t size;
     std::unique_ptr<Record[]> data;
 };

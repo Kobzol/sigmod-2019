@@ -68,6 +68,11 @@ public:
         return this->readData;
     }
 
+    void advise_sequential()
+    {
+        CHECK_NEG_ERROR(madvise(this->mmapData, this->size, MADV_SEQUENTIAL));
+    }
+
 private:
     FILE* file = nullptr;
     size_t size = 0;

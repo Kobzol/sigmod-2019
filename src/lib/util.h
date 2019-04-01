@@ -26,15 +26,17 @@ if ((ret) == nullptr)\
 
 #define DISABLE_COPY(klass)\
 klass(const klass&) = delete;\
-klass operator=(const klass&) = delete;
+klass operator=(const klass&) = delete
 
 #define DISABLE_MOVE(klass)\
-klass(const klass&&) = delete;
+klass(const klass&&) = delete
 
 #define TIME_BLOCK(name, block)\
 Timer timer##__LINE__;\
 block;\
 timer##__LINE__.print(name);
+
+#define EXPECT(cond, val) __builtin_expect(cond, val)
 
 size_t file_size(FILE* file);
 bool is_sorted(const Record* records, size_t count);
