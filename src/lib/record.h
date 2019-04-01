@@ -12,4 +12,4 @@ using Header = std::array<uint8_t, KEY_SIZE>;
 struct SortRecord {
     Header header;
     uint32_t index;
-};
+} __attribute__((packed));
