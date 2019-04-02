@@ -9,6 +9,11 @@ void write_buffered(
         const std::string &output, size_t buffer_size, size_t threads
 );
 
+void write_sequential_io(
+        const Record *records, const SortRecord *sorted, size_t count,
+        const std::string &output, size_t buffer_size, size_t threads
+);
+
 void write_mmap(
         const Record *records, const SortRecord *sorted, size_t count,
         const std::string &output, size_t threads

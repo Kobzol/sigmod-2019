@@ -120,6 +120,7 @@ std::vector<GroupData> sort_inmemory(const Record* input, size_t size, const std
     Timer timerWrite;
     write_mmap(input, output.get(), static_cast<size_t>(count), outfile, threads);
 //    write_buffered(input, output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
+//    write_sequential_io(input, output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
     timerWrite.print("Write");
 
     return groupData;

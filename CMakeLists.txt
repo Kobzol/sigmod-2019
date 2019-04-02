@@ -13,7 +13,6 @@ endif()
 
 set(SOURCE_FILES
         src/lib/util.cpp
-        src/lib/record.h
         src/lib/sort/radix.cpp
         src/lib/io/io.cpp
         src/lib/partition.cpp

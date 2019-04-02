@@ -18,8 +18,9 @@ static void sort(const std::string& infile, const std::string& outfile)
     auto count = size / TUPLE_SIZE;
     std::cerr << "File size: " << size << std::endl;
 
-    if (false)//size <= LIMIT_IN_MEMORY_SORT)
+    if (size <= LIMIT_IN_MEMORY_SORT)
     {
+        auto buffer = std::unique_ptr<Record[]>(new Record[count]);
         Timer timerLoad;
         reader.read(buffer.get(), count);
         timerLoad.print("Read");
