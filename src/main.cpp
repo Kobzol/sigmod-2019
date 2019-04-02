@@ -15,16 +15,17 @@ static void sort(const std::string& infile, const std::string& outfile)
     MemoryReader reader(infile.c_str());
 
     auto size = reader.get_size();
+    auto count = size / TUPLE_SIZE;
     std::cerr << "File size: " << size << std::endl;
 
-    if (size <= LIMIT_IN_MEMORY_SORT)
+    if (false)//size <= LIMIT_IN_MEMORY_SORT)
     {
         Timer timerLoad;
-        reader.read(size);
+        reader.read(buffer.get(), count);
         timerLoad.print("Read");
 
         std::cerr << "Sort in-memory" << std::endl;
-        sort_inmemory(reader.get_data(), size, outfile, threadCount);
+        sort_inmemory(buffer.get(), size, outfile, threadCount);
     }
     else
     {
@@ -35,8 +36,6 @@ static void sort(const std::string& infile, const std::string& outfile)
 
 int main(int argc, char** argv)
 {
-    static_assert(EXTERNAL_SORT_PARTIAL_COUNT % TUPLE_SIZE == 0, "Partial sort size must be a multiple of tuple size");
-
     if (argc != 3)
     {
         std::cout << "USAGE: " << argv[0] << " [in-file] [outfile]" << std::endl;

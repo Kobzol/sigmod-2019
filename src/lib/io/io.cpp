@@ -29,7 +29,7 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
         size_t end = std::min(start + threadChunk, count);
 
         FileWriter writer(output.c_str());
-        writer.seek(start * TUPLE_SIZE);
+        writer.seek(start);
 
         size_t left = end - start;
         while (left > 0)

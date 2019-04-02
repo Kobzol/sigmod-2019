@@ -28,7 +28,7 @@ public:
     }
     void seek(size_t offset)
     {
-        CHECK_NEG_ERROR(lseek64(this->file, offset, SEEK_SET));
+        CHECK_NEG_ERROR(lseek64(this->file, offset * TUPLE_SIZE, SEEK_SET));
     }
 
     void write(const Record* data, size_t count)
@@ -53,7 +53,7 @@ public:
 
         while (total < size)
         {
-            ssize_t written = ::pwrite(this->file, input + total, size - total, offset + total);
+            ssize_t written = ::pwrite64(this->file, input + total, size - total, offset + total);
             CHECK_NEG_ERROR(written);
             total += written;
         }

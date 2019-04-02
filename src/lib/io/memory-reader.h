@@ -2,8 +2,8 @@
 
 #include <fcntl.h>
 #include <cassert>
-#include <sys/mman.h>
 #include <memory>
+#include <unistd.h>
 
 #include "../util.h"
 #include "../record.h"
@@ -12,26 +12,57 @@ class MemoryReader {
 public:
     explicit MemoryReader(const char* path)
     {
-        this->file = fopen(path, "rb");
-        CHECK_NULL_ERROR(this->file);
-        this->size = file_size(this->file);
+        this->handle = open(path, O_RDONLY);
+        CHECK_NEG_ERROR(this->handle);
+        this->size = file_size(this->handle);
     }
     DISABLE_COPY(MemoryReader);
     ~MemoryReader()
     {
-        CHECK_NEG_ERROR(fclose(this->file));
+        if (this->handle != -1)
+        {
+            CHECK_NEG_ERROR(close(this->handle));
+        }
     }
 
     MemoryReader(MemoryReader&& other) noexcept
     {
-        this->data = std::move(other.data);
         this->size = other.size;
+        this->handle = other.handle;
+        other.handle = -1;
     }
 
-    void read(size_t size)
+    void read(Record* data, size_t count, size_t offset = 0)
     {
-        this->data = std::unique_ptr<Record[]>(new Record[size / TUPLE_SIZE]);
-        if (fread(this->data.get(), size, 1, file) == 0) assert(false);
+        if (offset)
+        {
+            CHECK_NEG_ERROR(lseek64(this->handle, offset * TUPLE_SIZE, SEEK_SET));
+        }
+
+        size_t size = count * TUPLE_SIZE;
+        size_t total = 0;
+        char* buf = reinterpret_cast<char*>(data);
+        while (total < size)
+        {
+            auto readSize = ::read(this->handle, buf + total, size - total);
+            CHECK_NEG_ERROR(readSize);
+            total += readSize;
+        }
+    }
+
+    void read_at(Record* data, size_t count, size_t offset)
+    {
+        size_t totalRead = count * TUPLE_SIZE;
+        size_t currentRead = 0;
+        size_t readOffset = offset * TUPLE_SIZE;
+        char* buf = reinterpret_cast<char*>(data);
+        while (currentRead < totalRead)
+        {
+            auto readSize = ::pread64(this->handle, buf + currentRead,
+                    totalRead - currentRead, readOffset + currentRead);
+            CHECK_NEG_ERROR(readSize);
+            currentRead += readSize;
+        }
     }
 
     size_t get_size() const
@@ -39,13 +70,7 @@ public:
         return this->size;
     }
 
-    const Record* get_data() const
-    {
-        return this->data.get();
-    }
-
 private:
-    FILE* file = nullptr;
+    int handle = -1;
     size_t size;
-    std::unique_ptr<Record[]> data;
 };

@@ -17,20 +17,15 @@ struct GroupTarget
     uint32_t group;
     uint32_t index;
 };
-struct GroupData
-{
-    uint32_t start;
-    uint32_t count;
-};
 
-void sort_inmemory(const Record* input, size_t size, const std::string& outfile, size_t threads)
+std::vector<GroupData> sort_inmemory(const Record* input, size_t size, const std::string& outfile, size_t threads)
 {
     Timer timerGroupInit, timerSort;
 
     ssize_t count = size / TUPLE_SIZE;
     auto output = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
 
-    constexpr int GROUP_COUNT = 128;
+    const int GROUP_COUNT = SORT_GROUP_COUNT;
     auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[count]);
     std::vector<GroupData> groupData(GROUP_COUNT);
     std::vector<std::vector<uint32_t>> counts(static_cast<size_t>(threads));
@@ -42,7 +37,9 @@ void sort_inmemory(const Record* input, size_t size, const std::string& outfile,
     timerGroupInit.print("Group init");
 
     Timer timerMinMax;
-    uint8_t minimum = 255;
+    uint8_t minimum = 0;
+    uint8_t maximum = 255;
+    /*uint8_t minimum = 255;
     uint8_t maximum = 0;
 #pragma omp parallel for num_threads(threads / 4) reduction(min:minimum) reduction(max:maximum)
     for (ssize_t i = 0; i < count; i++)
@@ -51,9 +48,10 @@ void sort_inmemory(const Record* input, size_t size, const std::string& outfile,
         minimum = std::min(minimum, value);
         maximum = std::max(maximum, value);
     }
-    timerMinMax.print("Group min-max");
+    timerMinMax.print("Group min-max");*/
 
-    int divisor = std::ceil(((static_cast<int>(maximum) - static_cast<int>(minimum)) + 1) / (double) GROUP_COUNT);
+//    int divisor = std::ceil(((static_cast<int>(maximum) - static_cast<int>(minimum)) + 1) / (double) GROUP_COUNT);
+    int divisor = std::ceil(256 / (double) GROUP_COUNT);
     const auto shift = static_cast<uint32_t>(std::ceil(std::log2(divisor)));
     std::cerr << "Minimum: " << (int) minimum << ", maximum: " << (int) maximum << ", shift: " << shift << std::endl;
 
@@ -64,7 +62,7 @@ void sort_inmemory(const Record* input, size_t size, const std::string& outfile,
 #pragma omp for
         for (ssize_t i = 0; i < count; i++)
         {
-            auto groupIndex = (input[i][0] - minimum) >> shift;
+            auto groupIndex = input[i][0] >> shift;
             assert(groupIndex < GROUP_COUNT);
             targets[i].group = static_cast<uint32_t>(groupIndex);
             targets[i].index = static_cast<uint32_t>(counts[thread_id][groupIndex]++);
@@ -123,4 +121,6 @@ void sort_inmemory(const Record* input, size_t size, const std::string& outfile,
     write_mmap(input, output.get(), static_cast<size_t>(count), outfile, threads);
 //    write_buffered(input, output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
     timerWrite.print("Write");
+
+    return groupData;
 }

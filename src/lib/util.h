@@ -39,4 +39,5 @@ timer##__LINE__.print(name);
 #define EXPECT(cond, val) __builtin_expect(cond, val)
 
 size_t file_size(FILE* file);
+size_t file_size(int handle);
 bool is_sorted(const Record* records, size_t count);

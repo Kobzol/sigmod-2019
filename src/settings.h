@@ -16,3 +16,7 @@
     #define WRITE_LOCATION (std::string("/tmp"))
     #define EXTERNAL_SORT_PARTIAL_COUNT 5000000ull
 #endif
+
+#define SORT_GROUP_COUNT 64
+#define MERGE_READ_BUFFER_COUNT 4096 * 6
+#define MERGE_WRITE_BUFFER_COUNT 8192 * 32
