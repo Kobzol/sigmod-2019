@@ -8,6 +8,7 @@
 #include "../io/memory-reader.h"
 #include "../io/file-writer.h"
 #include "buffer.h"
+#include "../io/io.h"
 
 #include <vector>
 #include <queue>
@@ -103,6 +104,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     size_t offset = 0;
 
     auto buffer = std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]);
+    auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
 
     while (offset < count)
     {
@@ -116,12 +118,16 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         std::cerr << "Writing " << partialCount << " records to " << out << std::endl;
 
         Timer timer;
-        auto groupData = sort_inmemory(buffer.get(), partialCount * TUPLE_SIZE, out, threads);
+        auto groupData = sort_records(buffer.get(), sortBuffer.get(), partialCount, threads);
         for (size_t i = 0; i < groupData.size(); i++)
         {
             mergeRanges[i].groups.push_back(groupData[i]);
         }
         timer.print("Sort file");
+
+        Timer timerWrite;
+        write_mmap(buffer.get(), sortBuffer.get(), partialCount, out, threads);
+        timerWrite.print("Write");
 
         files.push_back(FileRecord{out, partialCount});
         offset += partialCount;

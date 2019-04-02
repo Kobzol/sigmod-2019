@@ -18,7 +18,7 @@ set(SOURCE_FILES
         src/lib/partition.cpp
         src/lib/sort/inmemory.cpp
         src/lib/sort/external.cpp
-)
+        src/lib/sort/sort.cpp)
 
 add_library(sortlib STATIC ${SOURCE_FILES})
 

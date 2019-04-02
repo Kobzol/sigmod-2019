@@ -15,18 +15,12 @@ static void sort(const std::string& infile, const std::string& outfile)
     MemoryReader reader(infile.c_str());
 
     auto size = reader.get_size();
-    auto count = size / TUPLE_SIZE;
     std::cerr << "File size: " << size << std::endl;
 
     if (size <= LIMIT_IN_MEMORY_SORT)
     {
-        auto buffer = std::unique_ptr<Record[]>(new Record[count]);
-        Timer timerLoad;
-        reader.read(buffer.get(), count);
-        timerLoad.print("Read");
-
         std::cerr << "Sort in-memory" << std::endl;
-        sort_inmemory(buffer.get(), size, outfile, threadCount);
+        sort_inmemory(infile, size, outfile, threadCount);
     }
     else
     {
