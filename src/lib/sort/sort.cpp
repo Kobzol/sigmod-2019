@@ -31,11 +31,9 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
     timerGroupInit.print("Group init");
 
     Timer timerMinMax;
-    uint8_t minimum = 01;
+    uint8_t minimum = 0;
     uint8_t maximum = 255;
-    /*uint8_t minimum = 255;
-    uint8_t maximum = 0;
-#pragma omp parallel for num_threads(threads / 4) reduction(min:minimum) reduction(max:maximum)
+/*#pragma omp parallel for num_threads(threads / 4) reduction(min:minimum) reduction(max:maximum)
     for (ssize_t i = 0; i < count; i++)
     {
         auto value = input[i][0];
@@ -44,8 +42,7 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
     }
     timerMinMax.print("Group min-max");*/
 
-//    int divisor = std::ceil(((static_cast<int>(maximum) - static_cast<int>(minimum)) + 1) / (double) GROUP_COUNT);
-    int divisor = std::ceil(256 / (double) GROUP_COUNT);
+    int divisor = std::ceil(((static_cast<int>(maximum) - static_cast<int>(minimum)) + 1) / (double) GROUP_COUNT);
     const auto shift = static_cast<uint32_t>(std::ceil(std::log2(divisor)));
     std::cerr << "Minimum: " << (int) minimum << ", maximum: " << (int) maximum << ", shift: " << shift << std::endl;
 

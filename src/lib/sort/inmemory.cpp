@@ -20,7 +20,15 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
     auto buffer = std::unique_ptr<Record[]>(new Record[count]);
     Timer timerLoad;
     MemoryReader reader(infile.c_str());
-    reader.read(buffer.get(), count);
+
+    size_t readThreads = 4;
+    size_t perThread = std::ceil(count / readThreads);
+#pragma omp parallel num_threads(readThreads)
+    {
+        size_t start = perThread * omp_get_thread_num();
+        size_t end = std::min(static_cast<size_t>(count), start + perThread);
+        reader.read_at(buffer.get() + start, end - start, start);
+    }
     timerLoad.print("Read");
 
     Timer timerSort;
