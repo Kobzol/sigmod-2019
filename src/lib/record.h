@@ -10,6 +10,12 @@ using Record = std::array<uint8_t, TUPLE_SIZE>;
 using Header = std::array<uint8_t, KEY_SIZE>;
 
 struct SortRecord {
+    SortRecord() = default;
+    SortRecord(const Header& header, uint32_t index): header(header), index(index)
+    {
+
+    }
+
     Header header;
     uint32_t index;
 } __attribute__((packed));

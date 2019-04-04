@@ -5,6 +5,7 @@
 #include "radix.h"
 #include "../../settings.h"
 #include "../io/memory-reader.h"
+#include "../io/mmap-writer.h"
 
 #include <memory>
 #include <vector>

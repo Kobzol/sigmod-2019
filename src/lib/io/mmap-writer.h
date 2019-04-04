@@ -12,15 +12,15 @@
 
 class MmapWriter {
 public:
-    explicit MmapWriter(const char* path, size_t size): size(size)
+    explicit MmapWriter(const char* path, size_t count): size(count * TUPLE_SIZE)
     {
         FILE* file = fopen(path, "wb+");
         CHECK_NULL_ERROR(file);
         int fd = fileno(file);
         CHECK_NEG_ERROR(fd);
-        CHECK_NEG_ERROR(ftruncate64(fd, size));
+        CHECK_NEG_ERROR(ftruncate64(fd, this->size));
 
-        this->data = reinterpret_cast<Record*>(mmap(nullptr, size, PROT_WRITE, MAP_SHARED, fd, 0));
+        this->data = reinterpret_cast<Record*>(mmap(nullptr, this->size, PROT_WRITE, MAP_SHARED, fd, 0));
         CHECK_NEG_ERROR((ssize_t) this->data);
         CHECK_NEG_ERROR(fclose(file));
     }
@@ -36,12 +36,6 @@ public:
     Record* get_data() const
     {
         return this->data;
-    }
-
-    void write(const Record* data, size_t size = 0)
-    {
-        if (size == 0) size = this->size;
-        std::memcpy(this->data, data, size);
     }
 
 private:

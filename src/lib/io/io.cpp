@@ -146,17 +146,17 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
 void write_mmap(const Record* __restrict__ records, const SortRecord* sorted, size_t count,
         const std::string& output, size_t threads)
 {
-    MmapWriter writer(output.c_str(), count * TUPLE_SIZE);
+    MmapWriter writer(output.c_str(), count);
     auto* __restrict__ target = writer.get_data();
 
-#pragma omp parallel for num_threads(threads / 2)
+#pragma omp parallel for num_threads(threads)
     for (size_t i = 0; i < count; i++)
     {
-        auto* ptr = records + sorted[i].index;
-//        target[i] = records[sorted[i].index];
+        target[i] = records[sorted[i].index];
+        /*auto* ptr = records + sorted[i].index;
         _mm256_storeu_si256((__m256i*)&target[i][0], _mm256_loadu_si256((__m256i*)&(*ptr)[0]));
         _mm256_storeu_si256((__m256i*)&target[i][32], _mm256_loadu_si256((__m256i*)&(*ptr)[32]));
         _mm256_storeu_si256((__m256i*)&target[i][64], _mm256_loadu_si256((__m256i*)&(*ptr)[64]));
-        *(reinterpret_cast<uint32_t*>(&target[i][96])) = *(reinterpret_cast<const uint32_t*>(&(*ptr)[96]));
+        *(reinterpret_cast<uint32_t*>(&target[i][96])) = *(reinterpret_cast<const uint32_t*>(&(*ptr)[96]));*/
     }
 }

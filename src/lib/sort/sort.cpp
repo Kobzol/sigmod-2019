@@ -109,3 +109,42 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
 
     return groupData;
 }
+
+std::vector<std::vector<SortRecord>> sort_records_per_parts(const Record* input, ssize_t count, size_t threads)
+{
+    Timer timerGroupInit;
+
+    const int GROUP_COUNT = SORT_GROUP_COUNT;
+    std::vector<std::vector<SortRecord>> groups(GROUP_COUNT);
+    for (auto& group: groups)
+    {
+        group.reserve(count / GROUP_COUNT);
+    }
+
+    int divisor = std::ceil(256 / (double) GROUP_COUNT);
+    const auto shift = static_cast<uint32_t>(std::ceil(std::log2(divisor)));
+
+#pragma omp parallel num_threads(16)
+    for (ssize_t i = 0; i < count; i++)
+    {
+        auto groupIndex = input[i][0] >> shift;
+        if (groupIndex / 4 == omp_get_thread_num())
+        {
+            assert(groupIndex < GROUP_COUNT);
+            groups[groupIndex].emplace_back(*(reinterpret_cast<const Header*>(&input[i])), i);
+        }
+    }
+
+    timerGroupInit.print("Group init");
+
+    Timer timerGroupSort;
+#pragma omp parallel for num_threads(threads) schedule(dynamic)
+    for (size_t i = 0; i < groups.size(); i++)
+    {
+        auto& group = groups[i];
+        msd_radix_sort(group.data(), group.size());
+    }
+    timerGroupSort.print("Group sort");
+
+    return groups;
+}
