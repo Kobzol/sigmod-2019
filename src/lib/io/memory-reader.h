@@ -32,13 +32,8 @@ public:
         other.handle = -1;
     }
 
-    void read(Record* data, size_t count, size_t offset = 0)
+    void read(Record* data, size_t count)
     {
-        if (offset)
-        {
-            CHECK_NEG_ERROR(lseek64(this->handle, offset * TUPLE_SIZE, SEEK_SET));
-        }
-
         size_t size = count * TUPLE_SIZE;
         size_t total = 0;
         char* buf = reinterpret_cast<char*>(data);

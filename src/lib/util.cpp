@@ -33,3 +33,12 @@ bool is_sorted(const Record* records, size_t count)
     }
     return true;
 }
+
+bool is_sorted(const SortRecord* records, size_t count)
+{
+    for (size_t i = 1; i < count; i++)
+    {
+        if (!cmp_header(records[i - 1].header, records[i].header)) return false;
+    }
+    return true;
+}

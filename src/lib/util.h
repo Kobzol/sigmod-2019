@@ -41,3 +41,4 @@ timer##__LINE__.print(name);
 size_t file_size(FILE* file);
 size_t file_size(int handle);
 bool is_sorted(const Record* records, size_t count);
+bool is_sorted(const SortRecord* records, size_t count);

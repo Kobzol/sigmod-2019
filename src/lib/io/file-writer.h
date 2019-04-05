@@ -4,6 +4,7 @@
 #include <cassert>
 #include <sys/mman.h>
 #include <memory>
+#include <unistd.h>
 
 #include "../util.h"
 #include "../record.h"
