@@ -22,8 +22,11 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
+void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 std::vector<GroupData> sort_records(const Record* input, SortRecord* output,
         ssize_t count, size_t threads);
+std::vector<GroupData> sort_records_direct(const SortRecord* input, SortRecord* output,
+                                    ssize_t count, size_t threads);
 std::vector<std::vector<SortRecord>> sort_records_per_parts(const Record* __restrict__ input,
                                                             ssize_t count, size_t threads);
 

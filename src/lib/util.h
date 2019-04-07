@@ -42,3 +42,7 @@ size_t file_size(FILE* file);
 size_t file_size(int handle);
 bool is_sorted(const Record* records, size_t count);
 bool is_sorted(const SortRecord* records, size_t count);
+inline const Header& get_header(const Record& record)
+{
+    return *(reinterpret_cast<const Header*>(&record));
+}

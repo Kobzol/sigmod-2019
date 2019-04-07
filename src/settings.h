@@ -11,7 +11,7 @@
 #ifdef REAL_RUN
     #define WRITE_LOCATION (std::string("/output-disk"))
 // number of partially sorted results in external sort
-    #define EXTERNAL_SORT_PARTIAL_COUNT 50000000ull
+    #define EXTERNAL_SORT_PARTIAL_COUNT 200000000ull
 #else
     #define WRITE_LOCATION (std::string("/tmp"))
     #define EXTERNAL_SORT_PARTIAL_COUNT 5000000ull
@@ -21,8 +21,8 @@
 #define SORT_GROUP_COUNT 64
 
 // buffer sizes for external merges
-#define MERGE_READ_BUFFER_COUNT 4096 * 6
-#define MERGE_WRITE_BUFFER_COUNT 8192 * 32
+#define MERGE_READ_BUFFER_COUNT (8192 * 16)
+#define MERGE_WRITE_BUFFER_COUNT (8192 * 32)
 
 // number of parts to split the read file into when doing inmemory overlapped sort
 #define INMEMORY_OVERLAP_PARTS 4

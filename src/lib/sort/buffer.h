@@ -60,24 +60,24 @@ public:
         left = std::min(left, static_cast<size_t>(MERGE_READ_BUFFER_COUNT));
         if (left)
         {
-            Timer timerRead;
+            //Timer timerRead;
             reader.read_at(buffer.data.get(), left, buffer.fileOffset);
             buffer.fileOffset += left;
             buffer.processedCount += left;
             buffer.size = left;
             buffer.offset = 0;
-            timerRead.print("Read buffer");
+            //timerRead.print("Read buffer");
         }
         return left;
     }
 
     void write_buffer(FileWriter& writer, Buffer& buffer)
     {
-        Timer timerWrite;
+        //Timer timerWrite;
         writer.write_at(buffer.data.get(), buffer.offset, buffer.fileOffset + buffer.processedCount);
         buffer.processedCount += buffer.offset;
         buffer.offset = 0;
-        timerWrite.print("Write buffer");
+        //timerWrite.print("Write buffer");
     }
 
     // read offset within the buffer

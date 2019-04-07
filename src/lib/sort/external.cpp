@@ -14,6 +14,7 @@
 #include <vector>
 #include <queue>
 #include <atomic>
+#include <cmath>
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
@@ -58,4 +59,65 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     Timer timer;
     merge_files(files, mergeRanges, outfile, size, threads);
     timer.print("Merge files");
+}
+void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
+{
+#define BUFFER_SIZE 100000000
+
+    ssize_t count = size / TUPLE_SIZE;
+    auto sortedOutput = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
+
+    {
+        auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
+        auto buffer = std::unique_ptr<Record[]>(new Record[BUFFER_SIZE]);
+        MemoryReader reader(infile.c_str());
+
+        auto chunks = std::ceil(count / (double) BUFFER_SIZE);
+        auto offset = 0;
+
+        Timer timerRead;
+        for (ssize_t i = 0; i < chunks; i++)
+        {
+            auto length = std::min(static_cast<ssize_t>(BUFFER_SIZE), count - offset);
+            if (length < 1) break;
+            reader.read(buffer.get(), length);
+
+#pragma omp parallel for num_threads(threads)
+            for (ssize_t j = 0; j < length; j++)
+            {
+                auto& sortRecord = sortBuffer.get()[offset + j];
+                sortRecord.header = get_header(buffer.get()[j]);
+                sortRecord.index = offset + j;
+            }
+            offset += length;
+        }
+        timerRead.print("Read");
+
+        Timer timerSort;
+        sort_records_direct(sortBuffer.get(), sortedOutput.get(), count, threads);
+        timerSort.print("Sort");
+    }
+
+    MmapReader mmapReader(infile.c_str());
+    FileWriter writer(outfile.c_str());
+
+#define OUT_BUFFER_SIZE 32768
+
+    auto* __restrict__ source = mmapReader.get_data();
+    auto buffer = std::unique_ptr<Record[]>(new Record[OUT_BUFFER_SIZE]);
+    size_t bufferOffset = 0;
+    auto chunks = std::ceil(count / (double) OUT_BUFFER_SIZE);
+
+    Timer timerWrite;
+    for (ssize_t i = 0; i < chunks; i++)
+    {
+        auto length = std::min(static_cast<size_t>(OUT_BUFFER_SIZE), count - bufferOffset);
+        for (size_t j = 0; j < length; j++)
+        {
+            buffer.get()[j] = source[sortedOutput.get()[bufferOffset + j].index];
+        }
+        writer.write_at(buffer.get(), length, bufferOffset);
+        bufferOffset += length;
+    }
+    timerWrite.print("Write");
 }
