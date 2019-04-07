@@ -15,6 +15,7 @@
 #include <queue>
 #include <atomic>
 #include <cmath>
+#include <omp.h>
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
@@ -101,10 +102,27 @@ void sort_external_records(const std::string& infile, size_t size, const std::st
         timerSort.print("Sort");
     }
 
+    /*auto writeThreads = threads;
+    ssize_t chunkSize = std::ceil(count / (double) writeThreads);
+    MemoryReader reader(infile.c_str());
+
+#pragma omp parallel num_threads(writeThreads)
+    {
+        FileWriter writer(outfile.c_str());
+        ssize_t start = omp_get_thread_num() * chunkSize;
+        auto end = std::min(count, start + chunkSize);
+
+        writer.seek(start);
+        for (ssize_t i = start; i < end; i++)
+        {
+            writer.splice_from(reader, sortedOutput[i].index, 1);
+        }
+    }*/
+
     MmapReader mmapReader(infile.c_str());
     FileWriter writer(outfile.c_str());
 
-#define OUT_BUFFER_SIZE 32768
+#define OUT_BUFFER_SIZE 1024 * 1024 * 10
 
     auto* __restrict__ source = mmapReader.get_data();
     auto buffer = std::unique_ptr<Record[]>(new Record[OUT_BUFFER_SIZE]);

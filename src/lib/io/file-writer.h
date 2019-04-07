@@ -4,7 +4,7 @@
 #include <cassert>
 #include <sys/mman.h>
 #include <memory>
-#include <unistd.h>
+#include <sys/sendfile.h>
 
 #include "../util.h"
 #include "../record.h"
@@ -61,22 +61,20 @@ public:
         }
     }
 
-    void splice_from(MemoryReader& reader, size_t outOffset, size_t inOffset, size_t count)
+    void splice_from(MemoryReader& reader, size_t inOffset, size_t count)
     {
         auto size = count * TUPLE_SIZE;
-        off64_t writeOffset = outOffset * TUPLE_SIZE;
         off64_t readOffset = inOffset * TUPLE_SIZE;
         size_t written = 0;
+
         while (written < size)
         {
             auto left = size - written;
-            auto written_actual = copy_file_range(
+            auto written_actual = sendfile64(
+                    this->file,
                     reader.handle,
                     &readOffset,
-                    this->file,
-                    &writeOffset,
-                    left,
-                    0
+                    left
             );
             CHECK_NEG_ERROR(written_actual);
             written += written_actual;

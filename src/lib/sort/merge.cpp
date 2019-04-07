@@ -8,7 +8,7 @@
 #include <sys/sendfile.h>
 
 void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& readers,
-                        const MergeRange& range, FileWriter& writer)
+                        const MergeRange& range, const std::string& outfile)
 {
     std::vector<Buffer> buffers;
     size_t totalSize = 0;
@@ -40,6 +40,7 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
     Buffer outBuffer(MERGE_WRITE_BUFFER_COUNT);
     outBuffer.fileOffset = range.writeStart;
 
+    FileWriter writer(outfile.c_str());
     // merge until there is more than one read buffer
     while (heap.size() > 1)
     {
@@ -63,7 +64,8 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
     auto left = totalSize - outBuffer.processedCount;
     off64_t inOffset = buffers[source].fileOffset;
     off64_t outOffset = outBuffer.fileOffset + outBuffer.processedCount;
-    writer.splice_from(readers[source], outOffset, inOffset, left);
+    writer.seek(outOffset);
+    writer.splice_from(readers[source], inOffset, left);
 }
 
 void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& ranges,
@@ -97,7 +99,7 @@ void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& 
     for (size_t i = 0; i < ranges.size(); i++)
     {
         Timer timerMerge;
-        merge_range(files, readers, ranges[i], writer);
+        merge_range(files, readers, ranges[i], outfile);
         total++;
         //std::cerr << "Range " << i << ": " << ranges[i].size() << ", took " << timerMerge.get() << ", total: " << total << std::endl;
     }

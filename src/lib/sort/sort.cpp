@@ -165,10 +165,10 @@ std::vector<GroupData> sort_records_direct(
         uint32_t prevCount = i == 0 ? 0 : groupData[i - 1].count;
         groupData[i].start =  prevStart + prevCount;
 
-        std::cerr << i << ": " << groupData[i].count << ", ";
+//        std::cerr << i << ": " << groupData[i].count << ", ";
     }
 
-    std::cerr << std::endl;
+//    std::cerr << std::endl;
     timerGroupCount.print("Group count");
 
     size_t lastGroup = GROUP_COUNT;
