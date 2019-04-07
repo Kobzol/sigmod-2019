@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cassert>
 #include <omp.h>
+#include <byteswap.h>
 
 struct GroupTarget
 {
@@ -32,8 +33,8 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
     timerGroupInit.print("Group init");
 
     Timer timerMinMax;
-    uint8_t minimum = 0;
-    uint8_t maximum = 255;
+    uint64_t minimum = 0;
+    uint64_t maximum = std::numeric_limits<uint32_t>::max();
 /*#pragma omp parallel for num_threads(threads / 4) reduction(min:minimum) reduction(max:maximum)
     for (ssize_t i = 0; i < count; i++)
     {
@@ -43,9 +44,9 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
     }
     timerMinMax.print("Group min-max");*/
 
-    int divisor = std::ceil(((static_cast<int>(maximum) - static_cast<int>(minimum)) + 1) / (double) GROUP_COUNT);
+    uint64_t divisor = std::ceil(((static_cast<uint64_t>(maximum) - static_cast<uint64_t>(minimum)) + 1) / (double) GROUP_COUNT);
     const auto shift = static_cast<uint32_t>(std::ceil(std::log2(divisor)));
-    std::cerr << "Minimum: " << (int) minimum << ", maximum: " << (int) maximum << ", shift: " << shift << std::endl;
+    std::cerr << "Minimum: " << minimum << ", maximum: " << maximum << ", shift: " << shift << std::endl;
 
     Timer timerGroupCount;
 #pragma omp parallel num_threads(threads)
@@ -54,7 +55,7 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
 #pragma omp for
         for (ssize_t i = 0; i < count; i++)
         {
-            auto groupIndex = input[i][0] >> shift;
+            auto groupIndex = (bswap_32(*reinterpret_cast<const uint32_t*>(&input[i]))) >> shift;
             assert(groupIndex < GROUP_COUNT);
             targets[i].group = static_cast<uint32_t>(groupIndex);
             targets[i].index = static_cast<uint32_t>(counts[thread_id][groupIndex]++);

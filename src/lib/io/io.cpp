@@ -23,7 +23,7 @@ public:
     {
         this->buffer = std::unique_ptr<Record[]>(new Record[size]);
     }
-    SyncBuffer(SyncBuffer&& other)
+    SyncBuffer(SyncBuffer&& other) noexcept
     {
         this->size = other.size;
         this->offset = other.offset;
