@@ -65,7 +65,7 @@ public:
         return this->size;
     }
 
-private:
+//private:
     int handle = -1;
     size_t size;
 };

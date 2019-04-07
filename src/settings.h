@@ -18,11 +18,11 @@
 #endif
 
 // number of groups used for sort
-#define SORT_GROUP_COUNT 64
+#define SORT_GROUP_COUNT 256
 
 // buffer sizes for external merges
-#define MERGE_READ_BUFFER_COUNT (1024 * 256)
-#define MERGE_WRITE_BUFFER_COUNT (1024 * 256)
+#define MERGE_READ_BUFFER_COUNT (1024 * 512)
+#define MERGE_WRITE_BUFFER_COUNT (1024 * 512)
 
 // number of parts to split the read file into when doing inmemory overlapped sort
 #define INMEMORY_OVERLAP_PARTS 4

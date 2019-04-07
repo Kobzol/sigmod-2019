@@ -53,6 +53,18 @@ public:
         }
         return false;
     }
+    bool transfer_record_no_read(Buffer& other, FileWriter& writer, MemoryReader& reader)
+    {
+        this->write(other.read());
+        this->offset++;
+        other.offset++;
+
+        if (EXPECT(this->needsFlush(), 0))
+        {
+            this->write_buffer(writer, *this);
+        }
+        return other.needsFlush();
+    }
 
     size_t read_buffer(MemoryReader& reader, Buffer& buffer)
     {
