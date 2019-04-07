@@ -46,17 +46,6 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
     timerWrite.print("Write");
 }
 
-struct OverlapRange {
-    size_t start; // read address from input data
-    size_t end;   // end of iteration per thread
-    size_t offset = 0;  // current iteration per thread
-
-    size_t count() const
-    {
-        return this->end - this->start;
-    }
-};
-
 static void merge_inmemory(
         const Record* __restrict__ data,
         Record* __restrict__ target,

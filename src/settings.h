@@ -11,10 +11,10 @@
 #ifdef REAL_RUN
     #define WRITE_LOCATION (std::string("/output-disk"))
 // number of partially sorted results in external sort
-    #define EXTERNAL_SORT_PARTIAL_COUNT 250000000ull
+    #define EXTERNAL_SORT_PARTIAL_COUNT 80000000ull
 #else
     #define WRITE_LOCATION (std::string("/tmp"))
-    #define EXTERNAL_SORT_PARTIAL_COUNT 25000000ull
+    #define EXTERNAL_SORT_PARTIAL_COUNT 5000000ull
 #endif
 
 // number of groups used for sort

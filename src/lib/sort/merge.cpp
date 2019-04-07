@@ -1,11 +1,13 @@
 #include "merge.h"
 #include "buffer.h"
 #include "../compare.h"
+#include "../io/mmap-reader.h"
 
 #include <queue>
 #include <atomic>
 #include <algorithm>
 #include <sys/sendfile.h>
+#include <unordered_map>
 
 void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& readers,
                         const MergeRange& range, const std::string& outfile)
@@ -94,6 +96,7 @@ void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& 
         }
         std::cerr << std::endl;
     }
+
     std::atomic<size_t> total{0};
 #pragma omp parallel for num_threads(20) schedule(dynamic)
     for (size_t i = 0; i < ranges.size(); i++)

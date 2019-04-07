@@ -10,6 +10,7 @@
 #include "buffer.h"
 #include "../io/io.h"
 #include "merge.h"
+#include "../sync.h"
 
 #include <vector>
 #include <queue>
@@ -17,48 +18,94 @@
 #include <cmath>
 #include <omp.h>
 
+struct ReadRequest {
+    Record* buffer = nullptr;
+    size_t count = 0;
+    size_t offset = 0;
+};
+
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
+    Timer externalInit;
     size_t count = size / TUPLE_SIZE;
     std::vector<FileRecord> files;
     std::vector<MergeRange> mergeRanges(SORT_GROUP_COUNT);
     size_t offset = 0;
 
-    auto buffer = std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]);
+    std::vector<OverlapRange> overlapRanges;
+
+    while (offset < count)
+    {
+        size_t partialCount = std::min(count - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
+        OverlapRange range{ offset, offset + partialCount, 0 };
+        overlapRanges.push_back(range);
+        offset += partialCount;
+    }
+
+    SyncQueue<ReadRequest> readQueue;
+    SyncQueue<bool> notifyQueue;
+
+    std::thread readThread([&readQueue, &notifyQueue, &infile]() {
+        MemoryReader reader(infile.c_str());
+
+        while (true)
+        {
+            auto request = readQueue.pop();
+            if (request.buffer == nullptr) break;
+            Timer timerRead;
+            reader.read_at(request.buffer, request.count, request.offset);
+            timerRead.print("Read file");
+
+            notifyQueue.push(true);
+        }
+    });
+
+    std::unique_ptr<Record[]> buffers[2] = {
+            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
+            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT])
+    };
+    size_t activeBuffer = 0;
+    readQueue.push({ buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start });
 
     {
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
 
-        while (offset < count)
+        for (size_t r = 0; r < overlapRanges.size(); r++)
         {
-            Timer timerRead;
-            size_t partialCount = std::min(count - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
-            MemoryReader reader(infile.c_str());
-            reader.read_at(buffer.get(), partialCount, offset);
-            timerRead.print("Read file");
+            auto& range = overlapRanges[r];
+            notifyQueue.pop();
 
             std::string out = WRITE_LOCATION + "/out-" + std::to_string(files.size());
-            std::cerr << "Writing " << partialCount << " records to " << out << std::endl;
+            std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
 
             Timer timer;
-            auto groupData = sort_records(buffer.get(), sortBuffer.get(), partialCount, threads);
+            auto groupData = sort_records(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), threads);
             for (size_t i = 0; i < groupData.size(); i++)
             {
                 mergeRanges[i].groups.push_back(groupData[i]);
             }
             timer.print("Sort file");
 
-            offset += partialCount;
+            if (r < overlapRanges.size() - 1)
+            {
+                readQueue.push({ buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start });
+            }
+
             Timer timerWrite;
-            write_mmap(buffer.get(), sortBuffer.get(), partialCount, out, threads);
+            write_mmap(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out, threads);
             timerWrite.print("Write");
 
-            files.push_back(FileRecord{out, partialCount});
+            files.push_back(FileRecord{out, range.count()});
+            activeBuffer = 1 - activeBuffer;
         }
     }
+    readQueue.push({nullptr, 0, 0});
+    readThread.join();
 
     mergeRanges = remove_empty_ranges(mergeRanges);
     compute_write_offsets(mergeRanges);
+
+    externalInit.print("External init");
 
     Timer timer;
     merge_files(files, mergeRanges, outfile, size, threads);

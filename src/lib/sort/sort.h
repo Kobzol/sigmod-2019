@@ -17,6 +17,17 @@ struct FileRecord
     size_t count = 0;
 };
 
+struct OverlapRange {
+    size_t start; // read address from input data
+    size_t end;   // end of iteration per thread
+    size_t offset = 0;  // current iteration per thread
+
+    size_t count() const
+    {
+        return this->end - this->start;
+    }
+};
+
 
 void sort_inmemory(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
