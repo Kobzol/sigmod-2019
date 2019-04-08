@@ -15,81 +15,21 @@ public:
 
     }
 
-    const Record& read()
-    {
-        return this->data[this->offset];
-    }
-    void write(const Record& record)
-    {
-        this->data[this->offset] = record;
-    }
-
+    // whether read buffer is empty or write buffer is full
     bool needsFlush() const
     {
         return this->offset == this->size;
     }
+
+    // how many items need to be read/written from/to file
     size_t left() const
     {
         return this->totalSize - this->processedCount;
     }
-    size_t end() const
+    // how many items can be processed without reading/writing from/to file
+    size_t capacity() const
     {
-        return this->needsFlush() && this->left() == 0;
-    }
-
-    bool transfer_record(Buffer& other, FileWriter& writer, MemoryReader& reader)
-    {
-        this->write(other.read());
-        this->offset++;
-        other.offset++;
-
-        if (EXPECT(this->needsFlush(), 0))
-        {
-            this->write_buffer(writer, *this);
-        }
-        if (EXPECT(other.needsFlush(), 0))
-        {
-            return this->read_buffer(reader, other) == 0;
-        }
-        return false;
-    }
-    bool transfer_record_no_read(Buffer& other, FileWriter& writer, MemoryReader& reader)
-    {
-        this->write(other.read());
-        this->offset++;
-        other.offset++;
-
-        if (EXPECT(this->needsFlush(), 0))
-        {
-            this->write_buffer(writer, *this);
-        }
-        return other.needsFlush();
-    }
-
-    size_t read_buffer(MemoryReader& reader, Buffer& buffer)
-    {
-        auto left = buffer.left();
-        left = std::min(left, static_cast<size_t>(MERGE_READ_BUFFER_COUNT));
-        if (left)
-        {
-            //Timer timerRead;
-            reader.read_at(buffer.data.get(), left, buffer.fileOffset);
-            buffer.fileOffset += left;
-            buffer.processedCount += left;
-            buffer.size = left;
-            buffer.offset = 0;
-            //timerRead.print("Read buffer");
-        }
-        return left;
-    }
-
-    void write_buffer(FileWriter& writer, Buffer& buffer)
-    {
-        //Timer timerWrite;
-        writer.write_at(buffer.data.get(), buffer.offset, buffer.fileOffset + buffer.processedCount);
-        buffer.processedCount += buffer.offset;
-        buffer.offset = 0;
-        //timerWrite.print("Write buffer");
+        return this->size - this->offset;
     }
 
     // read offset within the buffer
@@ -108,4 +48,73 @@ public:
     size_t fileOffset = 0;
 
     std::unique_ptr<Record[]> data;
+};
+
+struct ReadBuffer: public Buffer {
+    explicit ReadBuffer(size_t size): Buffer(size)
+    {
+
+    }
+
+    const Record& load()
+    {
+        return this->data[this->offset];
+    }
+
+    size_t read_from_file(MemoryReader& reader)
+    {
+        auto left = this->left();
+        left = std::min(left, static_cast<size_t>(this->size));
+        if (left)
+        {
+            //Timer timerRead;
+            reader.read_at(this->data.get(), left, this->fileOffset + this->processedCount);
+            this->processedCount += left;
+            this->size = left;
+            this->offset = 0;
+            //timerRead.print("Read buffer");
+        }
+        return left;
+    }
+};
+
+struct WriteBuffer: public Buffer {
+    explicit WriteBuffer(size_t size): Buffer(size)
+    {
+
+    }
+
+    void store(const Record& record)
+    {
+        this->data[this->offset] = record;
+    }
+
+    void write_to_file(FileWriter& writer)
+    {
+        //Timer timerWrite;
+        writer.write_at(this->data.get(), this->offset, this->fileOffset + this->processedCount);
+        this->processedCount += this->offset;
+        this->offset = 0;
+        //timerWrite.print("Write buffer");
+    }
+
+    // transfers item from read buffer to this write buffer
+    // returns true if the read buffer is exhausted
+    template <bool READ_PREFETCH=true>
+    bool transfer_record(ReadBuffer& other, FileWriter& writer, MemoryReader& reader)
+    {
+        this->store(other.load());
+        this->offset++;
+        other.offset++;
+
+        if (EXPECT(other.needsFlush(), 0))
+        {
+            if (READ_PREFETCH)
+            {
+                return other.read_from_file(reader) == 0;
+            }
+            else return true;
+        }
+        return false;
+    }
 };

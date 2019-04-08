@@ -9,10 +9,26 @@
 #include <sys/sendfile.h>
 #include <unordered_map>
 
+template <typename Queue>
+static void merge_loop(WriteBuffer& outBuffer, std::vector<ReadBuffer>& buffers,
+        Queue& heap, FileWriter& writer, std::vector<MemoryReader>& readers, ssize_t count)
+{
+    for (ssize_t i = 0; i < count && heap.size() > 1; i++)
+    {
+        auto source = heap.top();
+        heap.pop();
+        auto read_exhausted = outBuffer.transfer_record<true>(buffers[source], writer, readers[source]);
+        if (!read_exhausted)
+        {
+            heap.push(source);
+        }
+    }
+}
+
 void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& readers,
                         const MergeRange& range, const std::string& outfile)
 {
-    std::vector<Buffer> buffers;
+    std::vector<ReadBuffer> buffers;
     size_t totalSize = 0;
     for (size_t i = 0; i < files.size(); i++)
     {
@@ -21,12 +37,12 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
         auto& buffer = buffers[buffers.size() - 1];
         buffer.fileOffset = group.start;
         buffer.totalSize = group.count;
-        buffer.read_buffer(readers[i], buffer);
+        buffer.read_from_file(readers[i]);
         totalSize += group.count;
     }
 
     auto cmp = [&buffers](short lhs, short rhs) {
-        return !cmp_record(buffers[lhs].read(), buffers[rhs].read());
+        return !cmp_record(buffers[lhs].load(), buffers[rhs].load());
     };
 
     std::priority_queue<short, std::vector<short>, decltype(cmp)> heap(cmp);
@@ -39,35 +55,38 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
         }
     }
 
-    Buffer outBuffer(MERGE_WRITE_BUFFER_COUNT);
+    WriteBuffer outBuffer(MERGE_WRITE_BUFFER_COUNT);
     outBuffer.fileOffset = range.writeStart;
 
     FileWriter writer(outfile.c_str());
-    // merge until there is more than one read buffer
     while (heap.size() > 1)
     {
-        auto source = heap.top();
-        heap.pop();
-        if (!outBuffer.transfer_record(buffers[source], writer, readers[source]))
-        {
-            heap.push(source);
-        }
+        ssize_t leftToWrite = std::min(outBuffer.size, totalSize - outBuffer.processedCount);
+        merge_loop(outBuffer, buffers, heap, writer, readers, leftToWrite);
+        outBuffer.write_to_file(writer);
     }
 
-    // empty memory buffers
+    // empty read memory buffer
     auto source = heap.top();
-    while (!outBuffer.transfer_record_no_read(buffers[source], writer, readers[source]));
-    if (outBuffer.offset)
+    while (buffers[source].capacity())
     {
-        outBuffer.write_buffer(writer, outBuffer);
+        ssize_t leftToWrite = std::min(outBuffer.size, buffers[source].capacity());
+        for (ssize_t i = 0; i < leftToWrite; i++)
+        {
+            outBuffer.transfer_record<false>(buffers[source], writer, readers[source]);
+        }
+        outBuffer.write_to_file(writer);
     }
 
     // copy rest in kernel
     auto left = totalSize - outBuffer.processedCount;
-    off64_t inOffset = buffers[source].fileOffset;
-    off64_t outOffset = outBuffer.fileOffset + outBuffer.processedCount;
-    writer.seek(outOffset);
-    writer.splice_from(readers[source], inOffset, left);
+    if (left)
+    {
+        off64_t inOffset = buffers[source].fileOffset + buffers[source].processedCount;
+        off64_t outOffset = outBuffer.fileOffset + outBuffer.processedCount;
+        writer.seek(outOffset);
+        writer.splice_from(readers[source], inOffset, left);
+    }
 }
 
 void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& ranges,
@@ -82,29 +101,22 @@ void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& 
         readers.emplace_back(file.name.c_str());
     }
 
-    auto ranges2 = ranges;
-    std::sort(ranges2.begin(), ranges2.end(), [](MergeRange& lhs, MergeRange& rhs){
-        return lhs.size() > rhs.size();
-    });
-
-    for (int i = 0; i < 10; i++)
+    /*MergeRange range;
+    range.writeStart = 0;
+    for (auto& file: files)
     {
-        std::cerr << ranges2[i].size() << ": ";
-        for (auto& group: ranges2[i].groups)
-        {
-            std::cerr << group.count << ", ";
-        }
-        std::cerr << std::endl;
+        range.groups.push_back(GroupData{0, static_cast<uint32_t>(file.count) });
     }
+    Timer timerMerge;
+    merge_range(files, readers, range, outfile);
+    timerMerge.print("Merge group");*/
 
-    std::atomic<size_t> total{0};
-#pragma omp parallel for num_threads(20) schedule(dynamic)
+#pragma omp parallel for num_threads(6) schedule(dynamic)
     for (size_t i = 0; i < ranges.size(); i++)
     {
         Timer timerMerge;
         merge_range(files, readers, ranges[i], outfile);
-        total++;
-        //std::cerr << "Range " << i << ": " << ranges[i].size() << ", took " << timerMerge.get() << ", total: " << total << std::endl;
+        timerMerge.print("Merge group");
     }
 }
 
