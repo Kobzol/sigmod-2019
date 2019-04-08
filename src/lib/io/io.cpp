@@ -60,18 +60,18 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
         size_t left = end - start;
         while (left > 0)
         {
-            Timer timerCopy;
+//            Timer timerCopy;
             size_t to_handle = std::min(left, buffer_size);
 #pragma omp parallel for num_threads(innerThreads)
             for (size_t i = 0; i < to_handle; i++)
             {
                 buffer[i] = records[sorted[start + i].index];
             }
-            timerCopy.print("Write copy");
+//            timerCopy.print("Write copy");
 
-            Timer timerIO;
+//            Timer timerIO;
             writer.write_at(buffer.get(), to_handle, start);
-            timerIO.print("Write I/O");
+//            timerIO.print("Write I/O");
             left -= to_handle;
             start += to_handle;
         }

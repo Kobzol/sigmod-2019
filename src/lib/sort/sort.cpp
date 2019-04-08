@@ -82,9 +82,6 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
 //    std::cerr << std::endl;
     timerGroupCount.print("Group count");
 
-    size_t lastGroup = GROUP_COUNT;
-    while (lastGroup > 0 && groupData[lastGroup - 1].count == 0) lastGroup--;
-
     Timer timerGroupDivide;
 #pragma omp parallel num_threads(threads)
     {
@@ -100,11 +97,21 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
     }
     timerGroupDivide.print("Group divide");
 
+    std::vector<GroupData> nonEmpty;
+    nonEmpty.reserve(groupData.size());
+    for (auto& group: groupData)
+    {
+        if (group.count > 0)
+        {
+            nonEmpty.push_back(group);
+        }
+    }
+
     Timer timerGroupSort;
 #pragma omp parallel for num_threads(threads) schedule(dynamic)
-    for (size_t i = 0; i < lastGroup; i++)
+    for (size_t i = 0; i < nonEmpty.size(); i++)
     {
-        auto& group = groupData[i];
+        auto& group = nonEmpty[i];
         msd_radix_sort(output + group.start, group.count);
     }
     timerGroupSort.print("Group sort");

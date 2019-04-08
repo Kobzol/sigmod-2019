@@ -60,20 +60,24 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         }
     });
 
-    std::unique_ptr<Record[]> buffers[2] = {
-            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
-            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT])
-    };
-    size_t activeBuffer = 0;
-    readQueue.push({ buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start });
-
     {
+        std::unique_ptr<Record[]> buffers[2] = {
+                std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
+                std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT])
+        };
+        size_t activeBuffer = 0;
+        readQueue.push({ buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start });
+
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
 
         for (size_t r = 0; r < overlapRanges.size(); r++)
         {
             auto& range = overlapRanges[r];
             notifyQueue.pop();
+            if (r < overlapRanges.size() - 1)
+            {
+                readQueue.push({ buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start });
+            }
 
             std::string out = WRITE_LOCATION + "/out-" + std::to_string(files.size());
             std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
@@ -86,13 +90,9 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             }
             timer.print("Sort file");
 
-            if (r < overlapRanges.size() - 1)
-            {
-                readQueue.push({ buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start });
-            }
-
             Timer timerWrite;
-            write_mmap(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out, threads);
+            write_buffered(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out,
+                    WRITE_BUFFER_COUNT, threads);
             timerWrite.print("Write");
 
             files.push_back(FileRecord{out, range.count()});
