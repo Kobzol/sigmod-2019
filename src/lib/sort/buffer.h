@@ -52,24 +52,35 @@ public:
 };
 
 struct ReadBuffer: public Buffer {
-    explicit ReadBuffer(size_t size): Buffer(size), data(std::unique_ptr<Record[]>(new Record[size]))
+    explicit ReadBuffer(size_t bufferSize, size_t fileOffset, size_t totalSize, MemoryReader* reader)
+    : Buffer(bufferSize), data(std::unique_ptr<Record[]>(new Record[bufferSize])), reader(reader)
     {
+        this->fileOffset = fileOffset;
+        this->totalSize = totalSize;
+        this->memory = this->data.get();
+        this->read_from_source();
+    }
 
+    explicit ReadBuffer(Record* memory, size_t memorySize)
+            : Buffer(memorySize), memory(memory)
+    {
+        this->totalSize = memorySize;
+        this->processedCount = memorySize;
     }
 
     const Record& load()
     {
-        return this->data[this->offset];
+        return this->memory[this->offset];
     }
 
-    size_t read_from_file(MemoryReader& reader)
+    size_t read_from_source()
     {
         auto left = this->left();
         left = std::min(left, static_cast<size_t>(this->size));
         if (left)
         {
             Timer timerRead;
-            reader.read_at(this->data.get(), left, this->fileOffset + this->processedCount);
+            this->reader->read_at(this->memory, left, this->fileOffset + this->processedCount);
             this->processedCount += left;
             this->size = left;
             this->offset = 0;
@@ -78,7 +89,9 @@ struct ReadBuffer: public Buffer {
         return left;
     }
 
+    Record* memory = nullptr;
     std::unique_ptr<Record[]> data;
+    MemoryReader* reader = nullptr;
 };
 
 struct WriteBuffer: public Buffer {
@@ -108,7 +121,7 @@ struct WriteBuffer: public Buffer {
     // transfers item from read buffer to this write buffer
     // returns true if the read buffer is exhausted
     template <bool READ_PREFETCH=true>
-    bool transfer_record(ReadBuffer& other, FileWriter& writer, MemoryReader& reader)
+    bool transfer_record(ReadBuffer& other, FileWriter& writer)
     {
         this->store(other.load());
         this->offset++;
@@ -118,7 +131,7 @@ struct WriteBuffer: public Buffer {
         {
             if (READ_PREFETCH)
             {
-                return other.read_from_file(reader) == 0;
+                return other.read_from_source() == 0;
             }
             else return true;
         }

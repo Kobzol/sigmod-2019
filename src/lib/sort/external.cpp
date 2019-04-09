@@ -60,12 +60,12 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         }
     });
 
+    std::unique_ptr<Record[]> buffers[2] = {
+            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
+            std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT])
+    };
+    size_t activeBuffer = 0;
     {
-        std::unique_ptr<Record[]> buffers[2] = {
-                std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
-                std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT])
-        };
-        size_t activeBuffer = 0;
         readQueue.push({ buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start });
 
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
@@ -74,8 +74,10 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         {
             auto& range = overlapRanges[r];
             notifyQueue.pop();
-            if (r < overlapRanges.size() - 1)
+            bool lastPart = r == overlapRanges.size() - 1;
+            if (!lastPart)
             {
+                // prefetch next part from disk
                 readQueue.push({ buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start });
             }
 
@@ -90,17 +92,36 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             }
             timer.print("Sort file");
 
-            Timer timerWrite;
-            write_buffered(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out,
-                    WRITE_BUFFER_COUNT, threads);
-            timerWrite.print("Write");
+            if (lastPart)
+            {
+                Timer timerPartCopy;
+                auto* __restrict__ source = buffers[activeBuffer].get();
+                auto* __restrict__ target = buffers[1 - activeBuffer].get();
+#pragma omp parallel for num_threads(threads)
+                for (size_t i = 0; i < range.count(); i++)
+                {
+                    target[i] = source[sortBuffer.get()[i].index];
+                }
+                timerPartCopy.print("Last part copy");
+            }
+            else
+            {
+                Timer timerWrite;
+                write_buffered(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out,
+                               WRITE_BUFFER_COUNT, threads);
+                timerWrite.print("Write");
 
-            files.push_back(FileRecord{out, range.count()});
+                files.push_back(FileRecord{out, range.count()});
+            }
             activeBuffer = 1 - activeBuffer;
         }
     }
     readQueue.push({nullptr, 0, 0});
     readThread.join();
+
+    // active buffer contains the last merge part here
+    // free up the second buffer
+    buffers[1 - activeBuffer].reset();
 
     mergeRanges = remove_empty_ranges(mergeRanges);
     compute_write_offsets(mergeRanges);
@@ -108,7 +129,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     externalInit.print("External init");
 
     Timer timer;
-    merge_files(files, mergeRanges, outfile, size, threads);
+    merge_files(files, mergeRanges, buffers[activeBuffer].get(), overlapRanges[overlapRanges.size() - 1].count(),
+            outfile, size, threads);
     timer.print("Merge files");
 }
 void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
