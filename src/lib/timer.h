@@ -18,10 +18,11 @@ public:
     {
         this->point = TimerClock::now();
     }
+    template <typename Unit=std::chrono::milliseconds>
     double get()
     {
         auto elapsed = TimerClock::now() - this->point;
-        return std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
+        return std::chrono::duration_cast<Unit>(elapsed).count();
     }
     double add()
     {

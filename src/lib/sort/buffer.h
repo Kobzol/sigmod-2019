@@ -1,16 +1,19 @@
 #pragma once
 
 #include <memory>
+#include <atomic>
 
 #include "../record.h"
 #include "../../settings.h"
 #include "../io/memory-reader.h"
 #include "../io/file-writer.h"
 
+extern std::atomic<size_t> bufferIORead;
+extern std::atomic<size_t> bufferIOWrite;
 
 struct Buffer {
 public:
-    explicit Buffer(size_t size): size(size), data(std::unique_ptr<Record[]>(new Record[size]))
+    explicit Buffer(size_t size): size(size)
     {
 
     }
@@ -46,12 +49,10 @@ public:
 
     // offset of the file
     size_t fileOffset = 0;
-
-    std::unique_ptr<Record[]> data;
 };
 
 struct ReadBuffer: public Buffer {
-    explicit ReadBuffer(size_t size): Buffer(size)
+    explicit ReadBuffer(size_t size): Buffer(size), data(std::unique_ptr<Record[]>(new Record[size]))
     {
 
     }
@@ -67,35 +68,41 @@ struct ReadBuffer: public Buffer {
         left = std::min(left, static_cast<size_t>(this->size));
         if (left)
         {
-            //Timer timerRead;
+            Timer timerRead;
             reader.read_at(this->data.get(), left, this->fileOffset + this->processedCount);
             this->processedCount += left;
             this->size = left;
             this->offset = 0;
-            //timerRead.print("Read buffer");
+            bufferIORead += timerRead.get();
         }
         return left;
     }
+
+    std::unique_ptr<Record[]> data;
 };
 
 struct WriteBuffer: public Buffer {
     explicit WriteBuffer(size_t size): Buffer(size)
     {
-
+        for (auto& buffer : this->buffers)
+        {
+            buffer = std::unique_ptr<Record[]>(new Record[size]);
+        }
     }
 
     void store(const Record& record)
     {
-        this->data[this->offset] = record;
+        this->getActiveBuffer()[this->offset] = record;
     }
 
     void write_to_file(FileWriter& writer)
     {
-        //Timer timerWrite;
-        writer.write_at(this->data.get(), this->offset, this->fileOffset + this->processedCount);
+        Timer timerWrite;
+        writer.write_at(this->getActiveBuffer(), this->offset, this->fileOffset + this->processedCount);
+        bufferIOWrite += timerWrite.get();
+
         this->processedCount += this->offset;
         this->offset = 0;
-        //timerWrite.print("Write buffer");
     }
 
     // transfers item from read buffer to this write buffer
@@ -117,4 +124,16 @@ struct WriteBuffer: public Buffer {
         }
         return false;
     }
+
+    Record* getActiveBuffer()
+    {
+        return this->buffers[this->activeBuffer].get();
+    }
+    void swapBuffer()
+    {
+        this->activeBuffer = 1 - this->activeBuffer;
+    }
+
+    size_t activeBuffer = 0;
+    std::unique_ptr<Record[]> buffers[2];
 };

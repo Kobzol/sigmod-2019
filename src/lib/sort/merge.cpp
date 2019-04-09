@@ -2,6 +2,7 @@
 #include "buffer.h"
 #include "../compare.h"
 #include "../io/mmap-reader.h"
+#include "../sync.h"
 
 #include <queue>
 #include <atomic>
@@ -24,6 +25,15 @@ static void merge_loop(WriteBuffer& outBuffer, std::vector<ReadBuffer>& buffers,
         }
     }
 }
+
+struct WriteRequest {
+    Record* buffer;
+    size_t count;
+    size_t offset;
+};
+
+std::atomic<size_t> bufferIORead{0};
+std::atomic<size_t> bufferIOWrite{0};
 
 void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& readers,
                         const MergeRange& range, const std::string& outfile)
@@ -58,13 +68,42 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
     WriteBuffer outBuffer(MERGE_WRITE_BUFFER_COUNT);
     outBuffer.fileOffset = range.writeStart;
 
+    SyncQueue<WriteRequest> writeQueue;
+    SyncQueue<size_t> notifyQueue;
     FileWriter writer(outfile.c_str());
+
+    std::thread writeThread([&writeQueue, &notifyQueue, &writer]() {
+        while (true)
+        {
+            auto request = writeQueue.pop();
+            if (request.buffer == nullptr) break;
+            if (request.count)
+            {
+                Timer timerWrite;
+                writer.write_at(request.buffer, request.count, request.offset);
+                bufferIOWrite += timerWrite.get();
+            }
+            notifyQueue.push(request.count);
+        }
+    });
+
+    notifyQueue.push(0);
     while (heap.size() > 1)
     {
         ssize_t leftToWrite = std::min(outBuffer.size, totalSize - outBuffer.processedCount);
         merge_loop(outBuffer, buffers, heap, writer, readers, leftToWrite);
-        outBuffer.write_to_file(writer);
+
+        size_t written = notifyQueue.pop();
+        outBuffer.processedCount += written;
+        WriteRequest request{outBuffer.getActiveBuffer(), outBuffer.offset, outBuffer.fileOffset + outBuffer.processedCount};
+        writeQueue.push(request);
+        outBuffer.swapBuffer();
+        outBuffer.offset = 0;
     }
+
+    size_t written = notifyQueue.pop();
+    outBuffer.processedCount += written;
+    outBuffer.offset = 0;
 
     // empty read memory buffer
     auto source = heap.top();
@@ -85,8 +124,13 @@ void merge_range(std::vector<FileRecord>& files, std::vector<MemoryReader>& read
         off64_t inOffset = buffers[source].fileOffset + buffers[source].processedCount;
         off64_t outOffset = outBuffer.fileOffset + outBuffer.processedCount;
         writer.seek(outOffset);
+        Timer timerWrite;
         writer.splice_from(readers[source], inOffset, left);
+        bufferIOWrite += timerWrite.get();
     }
+
+    writeQueue.push(WriteRequest{ nullptr, 0, 0 });
+    writeThread.join();
 }
 
 void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& ranges,
@@ -101,7 +145,7 @@ void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& 
         readers.emplace_back(file.name.c_str());
     }
 
-    /*MergeRange range;
+    MergeRange range;
     range.writeStart = 0;
     for (auto& file: files)
     {
@@ -109,15 +153,18 @@ void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& 
     }
     Timer timerMerge;
     merge_range(files, readers, range, outfile);
-    timerMerge.print("Merge group");*/
+    timerMerge.print("Merge group");
 
-#pragma omp parallel for num_threads(6) schedule(dynamic)
+    std::cerr << "Merge read IO: " << (bufferIORead / 1000) << std::endl;
+    std::cerr << "Merge write IO: " << (bufferIOWrite / 1000) << std::endl;
+
+/*#pragma omp parallel for num_threads(6) schedule(dynamic)
     for (size_t i = 0; i < ranges.size(); i++)
     {
         Timer timerMerge;
         merge_range(files, readers, ranges[i], outfile);
         timerMerge.print("Merge group");
-    }
+    }*/
 }
 
 void compute_write_offsets(std::vector<MergeRange>& ranges)
