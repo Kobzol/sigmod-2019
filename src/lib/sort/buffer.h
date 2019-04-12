@@ -59,6 +59,7 @@ struct ReadBuffer: public Buffer {
         this->totalSize = totalSize;
         this->memory = this->data.get();
         this->read_from_source();
+        this->loadLocal();
     }
 
     explicit ReadBuffer(Record* memory, size_t memorySize)
@@ -66,11 +67,17 @@ struct ReadBuffer: public Buffer {
     {
         this->totalSize = memorySize;
         this->processedCount = memorySize;
+        this->loadLocal();
     }
 
     const Record& load()
     {
-        return this->memory[this->offset];
+        return this->localCache;
+    }
+
+    void loadLocal()
+    {
+        this->localCache = this->memory[this->offset];
     }
 
     size_t read_from_source()
@@ -85,6 +92,7 @@ struct ReadBuffer: public Buffer {
             this->size = left;
             this->offset = 0;
             bufferIORead += timerRead.get();
+            this->loadLocal();
         }
         return left;
     }
@@ -92,6 +100,7 @@ struct ReadBuffer: public Buffer {
     Record* memory = nullptr;
     std::unique_ptr<Record[]> data;
     MemoryReader* reader = nullptr;
+    Record localCache;
 };
 
 struct WriteBuffer: public Buffer {
@@ -135,6 +144,7 @@ struct WriteBuffer: public Buffer {
             }
             else return true;
         }
+        other.loadLocal();
         return false;
     }
 

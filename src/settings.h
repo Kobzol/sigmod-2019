@@ -14,7 +14,7 @@
     #define EXTERNAL_SORT_PARTIAL_COUNT 120000000ull
 #else
     #define WRITE_LOCATION (std::string("/tmp"))
-    #define EXTERNAL_SORT_PARTIAL_COUNT 5000000ull
+    #define EXTERNAL_SORT_PARTIAL_COUNT 10000000ull
 #endif
 
 // number of groups used for sort
