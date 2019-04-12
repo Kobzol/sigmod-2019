@@ -24,6 +24,7 @@ static void sort(const std::string& infile, const std::string& outfile)
     }
     else
     {
+        return;
         std::cerr << "Sort external" << std::endl;
         sort_external(infile, size, outfile, threadCount);
     }

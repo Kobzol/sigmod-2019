@@ -9,6 +9,7 @@
 #include "../sync.h"
 #include "../compare.h"
 #include "merge.h"
+#include "buffer.h"
 
 #include <memory>
 #include <vector>
@@ -106,11 +107,14 @@ static void merge_inmemory(
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
     ssize_t count = size / TUPLE_SIZE;
-    auto buffer = std::unique_ptr<Record[]>(new Record[count]);
 
     std::unique_ptr<SortRecord[]> sortedRecords[INMEMORY_OVERLAP_PARTS];
     std::vector<OverlapRange> ranges;
     auto perPart = static_cast<size_t>(std::ceil(count / (double) INMEMORY_OVERLAP_PARTS));
+    std::unique_ptr<Record[]> buffers[2] = {
+            std::unique_ptr<Record[]>(new Record[perPart]),
+            std::unique_ptr<Record[]>(new Record[perPart])
+    };
 
     for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
     {
@@ -121,49 +125,88 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
         sortedRecords[i] = std::unique_ptr<SortRecord[]>(new SortRecord[range.count()]);
     }
 
-    SyncQueue<OverlapRange> queue;
+    SyncQueue<std::pair<OverlapRange, ssize_t>> inQueue;
+    SyncQueue<std::pair<OverlapRange, ssize_t>> outQueue;
 
-    std::thread readThread([&ranges, &queue, &buffer, &infile]() {
+    std::thread readThread([&inQueue, &outQueue, &buffers, &infile]() {
         MemoryReader reader(infile.c_str());
 
-        for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
+        size_t read = 0;
+        while (read < INMEMORY_OVERLAP_PARTS)
         {
-            auto range = ranges[i];
+            auto job = inQueue.pop();
+
+            auto range = job.first;
+            auto bufferIndex = job.second;
             Timer timerRead;
-            reader.read(buffer.get() + range.start, range.count());
+            reader.read(buffers[bufferIndex].get(), range.count());
             timerRead.print("Read");
-            queue.push(range);
+            outQueue.push({ range, bufferIndex });
+            read++;
         }
     });
 
-    std::vector<MergeRange> mergeRanges(SORT_GROUP_COUNT);
+    size_t groupSize = 256;
+    std::vector<std::vector<Record>> groups(groupSize);
 
-    for (auto& sortedRecord : sortedRecords)
+    inQueue.push({ ranges[0], 0 });
+
+    for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
     {
-        auto range = queue.pop();
-        Timer timerSort;
-        auto groupData = sort_records(buffer.get() + range.start, sortedRecord.get(), range.count(), threads);
-        for (size_t i = 0; i < groupData.size(); i++)
+        auto job = outQueue.pop();
+        auto range = job.first;
+        auto bufferIndex = job.second;
+
+        // start reading next chunk
+        if (i < INMEMORY_OVERLAP_PARTS - 1)
         {
-            mergeRanges[i].groups.push_back(groupData[i]);
+            inQueue.push({ ranges[i + 1], 1 - bufferIndex });
         }
-        timerSort.print("Sort");
+
+        Timer timerDistribute;
+        size_t numThreads = 20;
+        auto perThread = static_cast<size_t>(std::ceil(groupSize / (double) numThreads));
+        std::vector<size_t> bounds;
+        bounds.push_back(0);
+        for (int i = 0; i < numThreads + 1; i++)
+        {
+            bounds.push_back(bounds[i] + perThread);
+        }
+
+#pragma omp parallel num_threads(numThreads)
+        {
+            size_t id = omp_get_thread_num();
+            size_t min = bounds[id];
+            size_t max = bounds[id + 1];
+            for (size_t r = 0; r < range.count(); r++)
+            {
+                auto& record = buffers[bufferIndex].get()[r];
+                auto key = record[0];
+                if (key >= min && key < max)
+                {
+                    groups[key].push_back(record);
+                }
+            }
+        }
+        timerDistribute.print("Distribute");
     }
     readThread.join();
 
-    mergeRanges = remove_empty_ranges(mergeRanges);
-    compute_write_offsets(mergeRanges);
-
-    Timer timerMerge;
-
+    auto prefix = prefix_sum(groups);
     MmapWriter writer(outfile.c_str(), count);
-    auto* target = writer.get_data();
+    auto* __restrict__ target = writer.get_data();
 
-#pragma omp parallel for num_threads(threads) schedule(dynamic)
-    for (size_t i = 0; i < mergeRanges.size(); i++)
+    size_t start = 0;
+    size_t end = groups.size();
+    while (start < end && groups[start].empty()) start++;
+    while (end > start && groups[end - 1].empty()) end--;
+
+    Timer timerSort;
+#pragma omp parallel for schedule(dynamic) num_threads(20)
+    for (int i = start; i < end; i++)
     {
-        merge_inmemory(buffer.get(), target, sortedRecords, mergeRanges[i], ranges, outfile);
+        msd_radix_sort_record(groups[i].data(), groups[i].size());
+        std::memcpy(target + prefix[i], groups[i].data(), groups[i].size() * TUPLE_SIZE);
     }
-
-    timerMerge.print("Merge");
+    timerSort.print("Sort");
 }

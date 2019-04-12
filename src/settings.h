@@ -25,4 +25,4 @@
 #define MERGE_WRITE_BUFFER_COUNT (1024 * 512)
 
 // number of parts to split the read file into when doing inmemory overlapped sort
-#define INMEMORY_OVERLAP_PARTS 4
+#define INMEMORY_OVERLAP_PARTS 8
