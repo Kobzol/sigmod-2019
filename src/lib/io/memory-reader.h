@@ -60,12 +60,17 @@ public:
         }
     }
 
+    void readahead(size_t count)
+    {
+        CHECK_NEG_ERROR(::readahead(this->handle, 0, count * TUPLE_SIZE));
+    }
+
     size_t get_size() const
     {
         return this->size;
     }
 
-//private:
+private:
     int handle = -1;
     size_t size;
 };

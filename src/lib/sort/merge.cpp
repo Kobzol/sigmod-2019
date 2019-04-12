@@ -85,18 +85,14 @@ void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
     writeThread.join();
 }
 
-void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& ranges,
-                 Record* memoryBuffer, size_t memorySize,
-                 const std::string& outfile, size_t size, size_t threads)
+void merge_files(std::vector<FileRecord>& files,
+        std::vector<MemoryReader>& readers,
+        const std::vector<MergeRange>& ranges,
+        Record* memoryBuffer, size_t memorySize,
+        const std::string& outfile, size_t size, size_t threads)
 {
     FileWriter writer(outfile.c_str());
     writer.preallocate(size);
-
-    std::vector<MemoryReader> readers;
-    for (auto& file: files)
-    {
-        readers.emplace_back(file.name.c_str());
-    }
 
     size_t totalSize = 0;
     std::vector<ReadBuffer> buffers;

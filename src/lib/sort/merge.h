@@ -20,7 +20,9 @@ public:
     size_t writeStart = 0;
 };
 
-void merge_files(std::vector<FileRecord>& files, const std::vector<MergeRange>& ranges,
+void merge_files(std::vector<FileRecord>& files,
+                 std::vector<MemoryReader>& readers,
+                 const std::vector<MergeRange>& ranges,
                  Record* memoryBuffer, size_t memorySize, const std::string& outfile, size_t size, size_t threads);
 
 void compute_write_offsets(std::vector<MergeRange>& ranges);

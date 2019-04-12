@@ -61,26 +61,6 @@ public:
         }
     }
 
-    void splice_from(MemoryReader& reader, size_t inOffset, size_t count)
-    {
-        auto size = count * TUPLE_SIZE;
-        off64_t readOffset = inOffset * TUPLE_SIZE;
-        size_t written = 0;
-
-        while (written < size)
-        {
-            auto left = size - written;
-            auto written_actual = sendfile64(
-                    this->file,
-                    reader.handle,
-                    &readOffset,
-                    left
-            );
-            CHECK_NEG_ERROR(written_actual);
-            written += written_actual;
-        }
-    }
-
 private:
     int file;
 };
