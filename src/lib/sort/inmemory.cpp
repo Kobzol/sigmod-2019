@@ -73,7 +73,10 @@ static void merge_inmemory(
 
     for (size_t i = 0; i < ranges.size(); i++)
     {
-        heap.push(i);
+        if (ranges[i].offset < ranges[i].end)
+        {
+            heap.push(i);
+        }
     }
 
     while (heap.size() > 1)
@@ -115,7 +118,7 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
     for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
     {
         auto start = i * perPart;
-        auto end = std::min(static_cast<size_t>(count), start + perPart);
+        auto end = std::max(start, std::min(static_cast<size_t>(count), start + perPart));
         OverlapRange range{ start, end, 0 };
         ranges.push_back(range);
         sortedRecords[i] = std::unique_ptr<SortRecord[]>(new SortRecord[range.count()]);

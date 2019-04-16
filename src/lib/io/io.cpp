@@ -57,9 +57,9 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
         size_t start = threadId * threadChunk;
         size_t end = std::min(start + threadChunk, count);
 
-        size_t left = end - start;
-        while (left > 0)
+        while (start < end)
         {
+            size_t left = end - start;
 //            Timer timerCopy;
             size_t to_handle = std::min(left, buffer_size);
 #pragma omp parallel for num_threads(innerThreads)
@@ -72,7 +72,6 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
 //            Timer timerIO;
             writer.write_at(buffer.get(), to_handle, start);
 //            timerIO.print("Write I/O");
-            left -= to_handle;
             start += to_handle;
         }
     }

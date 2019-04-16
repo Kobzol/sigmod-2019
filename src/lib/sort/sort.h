@@ -18,6 +18,11 @@ struct FileRecord
 };
 
 struct OverlapRange {
+    OverlapRange(size_t start, size_t end, size_t offset): start(start), end(end), offset(offset)
+    {
+
+    }
+
     size_t start; // read address from input data
     size_t end;   // end of iteration per thread
     size_t offset = 0;  // current iteration per thread
