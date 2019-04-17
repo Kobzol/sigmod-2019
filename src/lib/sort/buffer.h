@@ -10,6 +10,7 @@
 
 extern std::atomic<size_t> bufferIORead;
 extern std::atomic<size_t> bufferIOWrite;
+extern std::atomic<size_t> mergeTime;
 
 struct Buffer {
 public:
@@ -28,11 +29,6 @@ public:
     size_t left() const
     {
         return this->totalSize - this->processedCount;
-    }
-    // how many items can be processed without reading/writing from/to file
-    size_t capacity() const
-    {
-        return this->size - this->offset;
     }
 
     // read offset within the buffer
@@ -58,8 +54,6 @@ struct ReadBuffer: public Buffer {
         this->fileOffset = fileOffset;
         this->totalSize = totalSize;
         this->memory = this->data.get();
-        this->read_from_source();
-        this->loadLocal();
     }
 
     explicit ReadBuffer(Record* memory, size_t memorySize)
@@ -80,10 +74,10 @@ struct ReadBuffer: public Buffer {
         this->localCache = this->memory[this->offset];
     }
 
-    size_t read_from_source()
+    size_t read_from_source(size_t size)
     {
         auto left = this->left();
-        left = std::min(left, static_cast<size_t>(this->size));
+        left = std::min(left, static_cast<size_t>(size));
         if (left)
         {
             Timer timerRead;
@@ -110,6 +104,7 @@ struct WriteBuffer: public Buffer {
         {
             buffer = std::unique_ptr<Record[]>(new Record[size]);
         }
+        this->activeBuffer = this->buffers[this->bufferIndex].get();
     }
 
     void store(const Record& record)
@@ -129,8 +124,7 @@ struct WriteBuffer: public Buffer {
 
     // transfers item from read buffer to this write buffer
     // returns true if the read buffer is exhausted
-    template <bool READ_PREFETCH=true>
-    bool transfer_record(ReadBuffer& other, FileWriter& writer)
+    bool transfer_record(ReadBuffer& other, FileWriter& writer, Timer& timer)
     {
         this->store(other.load());
         this->offset++;
@@ -138,25 +132,27 @@ struct WriteBuffer: public Buffer {
 
         if (EXPECT(other.needsFlush(), 0))
         {
-            if (READ_PREFETCH)
-            {
-                return other.read_from_source() == 0;
-            }
-            else return true;
+            mergeTime += timer.get<std::chrono::microseconds>();
+            auto result = other.read_from_source(MERGE_READ_COUNT);
+            timer.reset();
+            return result == 0;
         }
+
         other.loadLocal();
         return false;
     }
 
     Record* getActiveBuffer()
     {
-        return this->buffers[this->activeBuffer].get();
+        return this->activeBuffer;
     }
     void swapBuffer()
     {
-        this->activeBuffer = 1 - this->activeBuffer;
+        this->bufferIndex = 1 - this->bufferIndex;
+        this->activeBuffer = this->buffers[this->bufferIndex].get();
     }
 
-    size_t activeBuffer = 0;
+    Record* activeBuffer;
+    size_t bufferIndex = 0;
     std::unique_ptr<Record[]> buffers[2];
 };

@@ -18,6 +18,7 @@ struct WriteRequest {
 
 std::atomic<size_t> bufferIORead{0};
 std::atomic<size_t> bufferIOWrite{0};
+std::atomic<size_t> mergeTime{0};
 
 void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         size_t writeOffset, const std::string& outfile)
@@ -58,6 +59,7 @@ void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         }
     });
 
+    Timer timerMerge;
     notifyQueue.push(0);
     while (!heap.empty())
     {
@@ -66,7 +68,7 @@ void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         {
             auto source = heap.top();
             heap.pop();
-            auto read_exhausted = outBuffer.transfer_record<true>(buffers[source], writer);
+            auto read_exhausted = outBuffer.transfer_record(buffers[source], writer, timerMerge);
             if (!read_exhausted)
             {
                 heap.push(source);
@@ -83,32 +85,19 @@ void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
     notifyQueue.pop();
     writeQueue.push(WriteRequest{ nullptr, 0, 0 });
     writeThread.join();
+
+    std::cerr << "Merge processing: " << (mergeTime / 1000.0) << std::endl;
 }
 
 void merge_files(std::vector<FileRecord>& files,
         std::vector<MemoryReader>& readers,
-        const std::vector<MergeRange>& ranges,
-        Record* memoryBuffer, size_t memorySize,
+        std::vector<ReadBuffer>& buffers,
         const std::string& outfile, size_t size, size_t threads)
 {
     FileWriter writer(outfile.c_str());
     writer.preallocate(size);
 
-    size_t totalSize = 0;
-    std::vector<ReadBuffer> buffers;
-    for (size_t i = 0; i < files.size(); i++)
-    {
-        buffers.emplace_back(
-                static_cast<size_t>(MERGE_READ_BUFFER_COUNT),
-                static_cast<size_t>(0),
-                files[i].count,
-                &readers[i]
-        );
-        totalSize += files[i].count;
-    }
-    buffers.emplace_back(memoryBuffer, memorySize);
-    totalSize += memorySize;
-
+    size_t totalSize = size / TUPLE_SIZE;
     merge_range(buffers, totalSize, 0, outfile);
 
     std::cerr << "Merge read IO: " << bufferIORead << std::endl;

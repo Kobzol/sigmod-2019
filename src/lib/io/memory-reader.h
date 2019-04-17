@@ -60,9 +60,9 @@ public:
         }
     }
 
-    void readahead(size_t count)
+    void readahead(size_t count, size_t offset)
     {
-        CHECK_NEG_ERROR(::readahead(this->handle, 0, count * TUPLE_SIZE));
+        CHECK_NEG_ERROR(::readahead(this->handle, offset * TUPLE_SIZE, count * TUPLE_SIZE));
     }
 
     size_t get_size() const

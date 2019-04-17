@@ -19,9 +19,32 @@
 #include <omp.h>
 
 struct ReadRequest {
+    explicit ReadRequest(ReadBuffer* readBuffer): readBuffer(readBuffer)
+    {
+
+    }
+    explicit ReadRequest(Record* buffer, size_t count, size_t offset): buffer(buffer), count(count), offset(offset)
+    {
+
+    }
+
+    static ReadRequest lastRequest()
+    {
+        return {};
+    }
+
+    bool isLast() const
+    {
+        return this->readBuffer == nullptr && this->buffer == nullptr;
+    }
+
+    ReadBuffer* readBuffer = nullptr;
     Record* buffer = nullptr;
     size_t count = 0;
     size_t offset = 0;
+
+private:
+    ReadRequest() = default;
 };
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
@@ -29,7 +52,6 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     Timer externalInit;
     size_t count = size / TUPLE_SIZE;
     std::vector<FileRecord> files;
-    std::vector<MergeRange> mergeRanges(SORT_GROUP_COUNT);
     size_t offset = 0;
 
     std::vector<OverlapRange> overlapRanges;
@@ -51,9 +73,13 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         while (true)
         {
             auto request = readQueue.pop();
-            if (request.buffer == nullptr) break;
+            if (request.isLast()) break;
             Timer timerRead;
-            reader.read_at(request.buffer, request.count, request.offset);
+            if (request.readBuffer)
+            {
+                request.readBuffer->read_from_source(MERGE_INITIAL_READ_COUNT);
+            }
+            else reader.read_at(request.buffer, request.count, request.offset);
             timerRead.print("Read file");
 
             notifyQueue.push(true);
@@ -67,9 +93,10 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     size_t activeBuffer = 0;
 
     std::vector<MemoryReader> readers;
+    std::vector<ReadBuffer> readBuffers;
 
     {
-        readQueue.push({ buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start });
+        readQueue.push(ReadRequest(buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start));
 
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
 
@@ -81,14 +108,24 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             if (!lastPart)
             {
                 // prefetch next part from disk
-                readQueue.push({ buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start });
+                readQueue.push(ReadRequest(buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start));
             }
             else
             {
-                // perform readahead on the intermediate files
-                for (size_t i = 0; i < readers.size(); i++)
+                readBuffers.reserve(files.size() + 1);
+                for (size_t i = 0; i < files.size(); i++)
                 {
-                    readers[i].readahead(files[i].count);
+                    readBuffers.emplace_back(
+                            static_cast<size_t>(MERGE_READ_BUFFER_COUNT),
+                            static_cast<size_t>(0),
+                            files[i].count,
+                            &readers[i]
+                    );
+                    readers[i].readahead(files[i].count, 0);
+                }
+                for (auto& buffer: readBuffers)
+                {
+                    readQueue.push(ReadRequest(&buffer));
                 }
             }
 
@@ -96,11 +133,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
 
             Timer timer;
-            auto groupData = sort_records(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), threads);
-            for (size_t i = 0; i < groupData.size(); i++)
-            {
-                mergeRanges[i].groups.push_back(groupData[i]);
-            }
+            sort_records(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), threads);
             timer.print("Sort file");
 
             if (lastPart)
@@ -128,21 +161,19 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             activeBuffer = 1 - activeBuffer;
         }
     }
-    readQueue.push({nullptr, 0, 0});
+    readQueue.push(ReadRequest::lastRequest());
     readThread.join();
 
     // active buffer contains the last merge part here
     // free up the second buffer
     buffers[1 - activeBuffer].reset();
 
-    mergeRanges = remove_empty_ranges(mergeRanges);
-    compute_write_offsets(mergeRanges);
-
     externalInit.print("External init");
 
+    readBuffers.emplace_back(buffers[activeBuffer].get(), overlapRanges[overlapRanges.size() - 1].count());
+
     Timer timer;
-    merge_files(files, readers, mergeRanges, buffers[activeBuffer].get(), overlapRanges[overlapRanges.size() - 1].count(),
-            outfile, size, threads);
+    merge_files(files, readers, readBuffers, outfile, size, threads);
     timer.print("Merge files");
 }
 void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
