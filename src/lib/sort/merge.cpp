@@ -78,7 +78,7 @@ static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         for (ssize_t i = 0; i < leftToWrite; i++)
         {
             auto sourceIndex = extract_heap(buffers, heap);
-            auto readExhausted = outBuffer.transfer_record(buffers[heap[sourceIndex]], writer, timerMerge);
+            auto readExhausted = outBuffer.transfer_record(buffers[heap[sourceIndex]], timerMerge);
             if (EXPECT(readExhausted, 0))
             {
                 std::swap(heap[sourceIndex], heap[heap.size() - 1]);
@@ -98,7 +98,7 @@ static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
     writeQueue.push(WriteRequest{ nullptr, 0, 0 });
     writeThread.join();
 
-    std::cerr << "Merge processing: " << (mergeTime / 1000.0) << std::endl;
+    std::cerr << "Merge processing: " << mergeTime << std::endl;
 }
 
 void merge_files(std::vector<FileRecord>& files,

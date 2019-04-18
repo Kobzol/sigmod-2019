@@ -124,7 +124,7 @@ struct WriteBuffer: public Buffer {
 
     // transfers item from read buffer to this write buffer
     // returns true if the read buffer is exhausted
-    bool transfer_record(ReadBuffer& other, FileWriter& writer, Timer& timer)
+    bool transfer_record(ReadBuffer& other, Timer& timer)
     {
         this->store(other.load());
         this->offset++;
@@ -132,7 +132,7 @@ struct WriteBuffer: public Buffer {
 
         if (EXPECT(other.needsFlush(), 0))
         {
-            mergeTime += timer.get<std::chrono::microseconds>();
+            mergeTime += timer.get();
             auto result = other.read_from_source(MERGE_READ_COUNT);
             timer.reset();
             return result == 0;
