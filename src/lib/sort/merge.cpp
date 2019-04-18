@@ -20,20 +20,31 @@ std::atomic<size_t> bufferIORead{0};
 std::atomic<size_t> bufferIOWrite{0};
 std::atomic<size_t> mergeTime{0};
 
-void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
+static uint8_t extract_heap(const std::vector<ReadBuffer>& buffers, const std::vector<uint8_t>& heap)
+{
+    uint8_t smallest = 0;
+    auto size = static_cast<ssize_t>(heap.size());
+    for (ssize_t i = 1; i < size; i++)
+    {
+        if (cmp_record(buffers[heap[i]].load(), buffers[heap[smallest]].load()))
+        {
+            smallest = i;
+        }
+    }
+
+    return smallest;
+}
+
+static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         size_t writeOffset, const std::string& outfile)
 {
-    auto cmp = [&buffers](short lhs, short rhs) {
-        return !cmp_record(buffers[lhs].load(), buffers[rhs].load());
-    };
-
-    std::priority_queue<short, std::vector<short>, decltype(cmp)> heap(cmp);
+    std::vector<uint8_t> heap;
 
     for (size_t i = 0; i < buffers.size(); i++)
     {
         if (buffers[i].totalSize)
         {
-            heap.push(i);
+            heap.push_back(i);
         }
     }
 
@@ -64,14 +75,15 @@ void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
     while (!heap.empty())
     {
         ssize_t leftToWrite = std::min(outBuffer.size, totalSize - outBuffer.processedCount);
-        for (ssize_t i = 0; i < leftToWrite && !heap.empty(); i++)
+        for (ssize_t i = 0; i < leftToWrite; i++)
         {
-            auto source = heap.top();
-            heap.pop();
-            auto read_exhausted = outBuffer.transfer_record(buffers[source], writer, timerMerge);
-            if (!read_exhausted)
+            auto sourceIndex = extract_heap(buffers, heap);
+            auto readExhausted = outBuffer.transfer_record(buffers[heap[sourceIndex]], writer, timerMerge);
+            if (EXPECT(readExhausted, 0))
             {
-                heap.push(source);
+                std::swap(heap[sourceIndex], heap[heap.size() - 1]);
+                heap.resize(heap.size() - 1);
+                if (heap.empty()) break;
             }
         }
 

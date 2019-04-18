@@ -64,7 +64,7 @@ struct ReadBuffer: public Buffer {
         this->loadLocal();
     }
 
-    const Record& load()
+    const Record& load() const
     {
         return this->localCache;
     }
