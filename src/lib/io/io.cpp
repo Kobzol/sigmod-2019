@@ -2,6 +2,7 @@
 #include "mmap-writer.h"
 #include "file-writer.h"
 #include "../sync.h"
+#include "../sort/merge.h"
 
 #include <vector>
 #include <memory>
@@ -83,63 +84,54 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
     FileWriter fileOutput(output.c_str());
     fileOutput.preallocate(count * TUPLE_SIZE);
 
-    SyncQueue<SyncBuffer*> queue;
-    std::thread ioThread([&queue, &fileOutput]() {
+    SyncQueue<WriteRequest> writeQueue;
+    SyncQueue<size_t> notifyQueue;
+    FileWriter writer(output.c_str());
+
+    std::thread writeThread([&writeQueue, &notifyQueue, &writer]() {
         while (true)
         {
-            auto item = queue.pop();
-            if (item == nullptr) break;
-            Timer timerWrite;
-            fileOutput.write(item->buffer.get(), item->offset);
-            item->dirty.store(false);
-            timerWrite.print("Sequential write");
+            auto request = writeQueue.pop();
+            if (request.buffer == nullptr) break;
+            if (request.count)
+            {
+                Timer timerWrite;
+                writer.write_at(request.buffer, request.count, request.offset);
+                bufferIOWrite += timerWrite.get();
+            }
+            notifyQueue.push(request.count);
         }
     });
 
-    std::vector<SyncBuffer> buffers;
-    for (int i = 0; i < 2; i++)
+    WriteBuffer outBuffer(buffer_size);
+    notifyQueue.push(0);
+
+    size_t processed = 0;
+    while (processed < count)
     {
-        buffers.emplace_back(buffer_size);
-    }
-    int activeBuffer = 0;
-
-    size_t copied = 0;
-    while (copied < count)
-    {
-        auto& buffer = buffers[activeBuffer];
-
-        while (buffer.dirty)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-
-        auto to_handle = std::min(buffer.size, count - copied);
-        buffer.offset = to_handle;
+        auto to_handle = std::min(buffer_size, count - processed);
+        auto* buffer = outBuffer.getActiveBuffer();
 
         Timer timerCopy;
-#pragma omp parallel for num_threads(threads / 2)
+#pragma omp parallel for num_threads(10)
         for (size_t i = 0; i < to_handle; i++)
         {
-            buffer.buffer[i] = records[sorted[copied + i].index];
+            buffer[i] = records[sorted[processed + i].index];
         }
-        copied += to_handle;
+        processed += to_handle;
         timerCopy.print("Sequential copy");
 
-        buffer.dirty.store(true);
-        queue.push(&buffer);
-
-        activeBuffer = 1 - activeBuffer;
+        size_t written = notifyQueue.pop();
+        outBuffer.processedCount += written;
+        WriteRequest request{ outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount };
+        writeQueue.push(request);
+        outBuffer.swapBuffer();
     }
+    notifyQueue.pop();
+    writeQueue.push(WriteRequest{ nullptr, 0, 0 });
+    writeThread.join();
 
-    for (auto& buffer: buffers)
-    {
-        while (buffer.dirty)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-    }
-    queue.push(nullptr);
-    ioThread.join();
+    std::cerr << "Buffer IO: " << bufferIOWrite << std::endl;
 }
 
 void write_mmap(const Record* __restrict__ records, const SortRecord* sorted, size_t count,

@@ -10,12 +10,6 @@
 #include <sys/sendfile.h>
 #include <unordered_map>
 
-struct WriteRequest {
-    Record* buffer;
-    size_t count;
-    size_t offset;
-};
-
 std::atomic<size_t> bufferIORead{0};
 std::atomic<size_t> bufferIOWrite{0};
 std::atomic<size_t> mergeTime{0};
