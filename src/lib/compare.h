@@ -20,5 +20,5 @@ inline bool cmp_header(const Header& lhs, const Header& rhs)
 
 inline bool cmp_record(const Record& lhs, const Record& rhs)
 {
-    return *(reinterpret_cast<const Header*>(&lhs)) < *(reinterpret_cast<const Header*>(&rhs));
+    return cmp_header(*(reinterpret_cast<const Header*>(&lhs)), *(reinterpret_cast<const Header*>(&rhs)));
 }
