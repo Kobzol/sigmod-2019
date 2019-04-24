@@ -46,3 +46,13 @@ inline const Header& get_header(const Record& record)
 {
     return *(reinterpret_cast<const Header*>(&record));
 }
+
+inline void set_cpu(int id)
+{
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(id, &cpuset);
+    CHECK_NEG_ERROR(pthread_setaffinity_np(pthread_self(),
+                                           sizeof(cpu_set_t), &cpuset)
+    );
+}
