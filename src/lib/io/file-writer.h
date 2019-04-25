@@ -24,9 +24,9 @@ public:
     DISABLE_COPY(FileWriter);
     DISABLE_MOVE(FileWriter);
 
-    void preallocate(size_t size)
+    void preallocate(size_t count)
     {
-        CHECK_NEG_ERROR(ftruncate64(this->file, size));
+        CHECK_NEG_ERROR(ftruncate64(this->file, count * TUPLE_SIZE));
     }
     void seek(size_t offset)
     {

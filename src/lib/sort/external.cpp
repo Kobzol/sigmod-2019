@@ -11,41 +11,13 @@
 #include "../io/io.h"
 #include "merge.h"
 #include "../sync.h"
+#include "../io/worker.h"
 
 #include <vector>
 #include <queue>
 #include <atomic>
 #include <cmath>
 #include <omp.h>
-
-struct ReadRequest {
-    explicit ReadRequest(ReadBuffer* readBuffer): readBuffer(readBuffer)
-    {
-
-    }
-    explicit ReadRequest(Record* buffer, size_t count, size_t offset): buffer(buffer), count(count), offset(offset)
-    {
-
-    }
-
-    static ReadRequest lastRequest()
-    {
-        return {};
-    }
-
-    bool isLast() const
-    {
-        return this->readBuffer == nullptr && this->buffer == nullptr;
-    }
-
-    ReadBuffer* readBuffer = nullptr;
-    Record* buffer = nullptr;
-    size_t count = 0;
-    size_t offset = 0;
-
-private:
-    ReadRequest() = default;
-};
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
@@ -64,27 +36,11 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         offset += partialCount;
     }
 
-    SyncQueue<ReadRequest> readQueue;
-    SyncQueue<bool> notifyQueue;
+    SyncQueue<IORequest> ioQueue;
+    SyncQueue<size_t> notifyQueue;
+    MemoryReader reader(infile.c_str());
 
-    std::thread readThread([&readQueue, &notifyQueue, &infile]() {
-        MemoryReader reader(infile.c_str());
-
-        while (true)
-        {
-            auto request = readQueue.pop();
-            if (request.isLast()) break;
-            Timer timerRead;
-            if (request.readBuffer)
-            {
-                request.readBuffer->read_from_source(MERGE_INITIAL_READ_COUNT);
-            }
-            else reader.read_at(request.buffer, request.count, request.offset);
-            timerRead.print("Read file");
-
-            notifyQueue.push(true);
-        }
-    });
+    std::thread ioThread = ioWorker(ioQueue);
 
     std::unique_ptr<Record[]> buffers[2] = {
             std::unique_ptr<Record[]>(new Record[EXTERNAL_SORT_PARTIAL_COUNT]),
@@ -94,9 +50,11 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
 
     std::vector<MemoryReader> readers;
     std::vector<ReadBuffer> readBuffers;
+    readBuffers.reserve(files.size() + 1);
 
     {
-        readQueue.push(ReadRequest(buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start));
+        ioQueue.push(IORequest(buffers[activeBuffer].get(), overlapRanges[0].count(), overlapRanges[0].start,
+                &notifyQueue, &reader));
 
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
 
@@ -108,11 +66,11 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             if (!lastPart)
             {
                 // prefetch next part from disk
-                readQueue.push(ReadRequest(buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(), overlapRanges[r + 1].start));
+                ioQueue.push(IORequest(buffers[1 - activeBuffer].get(), overlapRanges[r + 1].count(),
+                        overlapRanges[r + 1].start, &notifyQueue, &reader));
             }
             else
             {
-                readBuffers.reserve(files.size() + 1);
                 for (size_t i = 0; i < files.size(); i++)
                 {
                     readBuffers.emplace_back(
@@ -125,7 +83,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 }
                 for (auto& buffer: readBuffers)
                 {
-                    readQueue.push(ReadRequest(&buffer));
+                    ioQueue.push(IORequest(MERGE_INITIAL_READ_COUNT, &notifyQueue, &buffer));
                 }
             }
 
@@ -161,8 +119,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             activeBuffer = 1 - activeBuffer;
         }
     }
-    readQueue.push(ReadRequest::lastRequest());
-    readThread.join();
+    ioQueue.push(IORequest::last());
+    ioThread.join();
 
     // active buffer contains the last merge part here
     // free up the second buffer

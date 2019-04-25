@@ -19,6 +19,7 @@ set(SOURCE_FILES
         src/lib/sort/merge.cpp
         src/lib/sort/radix.cpp
         src/lib/sort/sort.cpp
+        src/lib/io/worker.cpp
 )
 
 add_library(sortlib STATIC ${SOURCE_FILES})

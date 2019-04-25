@@ -3,6 +3,7 @@
 #include "file-writer.h"
 #include "../sync.h"
 #include "../sort/merge.h"
+#include "worker.h"
 
 #include <vector>
 #include <memory>
@@ -42,7 +43,7 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
                     size_t buffer_size, size_t threads)
 {
     FileWriter fileOutput(output.c_str());
-    fileOutput.preallocate(count * TUPLE_SIZE);
+    fileOutput.preallocate(count);
 
     const size_t outerThreads = 4;
     const size_t innerThreads = threads / outerThreads;
@@ -81,27 +82,13 @@ void write_buffered(const Record *records, const SortRecord *sorted, size_t coun
 void write_sequential_io(const Record *records, const SortRecord *sorted, size_t count, const std::string& output,
                     size_t buffer_size, size_t threads)
 {
-    FileWriter fileOutput(output.c_str());
-    fileOutput.preallocate(count * TUPLE_SIZE);
-
-    SyncQueue<WriteRequest> writeQueue;
-    SyncQueue<size_t> notifyQueue;
     FileWriter writer(output.c_str());
+    writer.preallocate(count);
 
-    std::thread writeThread([&writeQueue, &notifyQueue, &writer]() {
-        while (true)
-        {
-            auto request = writeQueue.pop();
-            if (request.buffer == nullptr) break;
-            if (request.count)
-            {
-                Timer timerWrite;
-                writer.write_at(request.buffer, request.count, request.offset);
-                bufferIOWrite += timerWrite.get();
-            }
-            notifyQueue.push(request.count);
-        }
-    });
+    SyncQueue<IORequest> ioQueue;
+    SyncQueue<size_t> notifyQueue;
+
+    std::thread ioThread = ioWorker(ioQueue);
 
     WriteBuffer outBuffer(buffer_size);
     notifyQueue.push(0);
@@ -123,13 +110,13 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
 
         size_t written = notifyQueue.pop();
         outBuffer.processedCount += written;
-        WriteRequest request{ outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount };
-        writeQueue.push(request);
+        ioQueue.push(IORequest(outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount, &notifyQueue,
+                &writer));
         outBuffer.swapBuffer();
     }
     notifyQueue.pop();
-    writeQueue.push(WriteRequest{ nullptr, 0, 0 });
-    writeThread.join();
+    ioQueue.push(IORequest::last());
+    ioThread.join();
 
     std::cerr << "Buffer IO: " << bufferIOWrite << std::endl;
 }

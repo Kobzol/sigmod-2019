@@ -20,11 +20,6 @@ public:
     std::vector<GroupData> groups;
     size_t writeStart = 0;
 };
-struct WriteRequest {
-    Record* buffer;
-    size_t count;
-    size_t offset;
-};
 
 void merge_files(std::vector<FileRecord>& files,
                  std::vector<MemoryReader>& readers,

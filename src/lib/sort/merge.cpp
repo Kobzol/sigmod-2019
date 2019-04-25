@@ -3,6 +3,7 @@
 #include "../compare.h"
 #include "../io/mmap-reader.h"
 #include "../sync.h"
+#include "../io/worker.h"
 
 #include <queue>
 #include <atomic>
@@ -30,10 +31,9 @@ static uint8_t extract_heap(const std::vector<ReadBuffer>& buffers, const std::v
 }
 
 static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
-        size_t writeOffset, const std::string& outfile)
+        size_t writeOffset, FileWriter& writer)
 {
     std::vector<uint8_t> heap;
-
     for (size_t i = 0; i < buffers.size(); i++)
     {
         if (buffers[i].totalSize)
@@ -45,24 +45,10 @@ static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
     WriteBuffer outBuffer(MERGE_WRITE_BUFFER_COUNT);
     outBuffer.fileOffset = writeOffset;
 
-    SyncQueue<WriteRequest> writeQueue;
+    SyncQueue<IORequest> ioQueue;
     SyncQueue<size_t> notifyQueue;
-    FileWriter writer(outfile.c_str());
 
-    std::thread writeThread([&writeQueue, &notifyQueue, &writer]() {
-        while (true)
-        {
-            auto request = writeQueue.pop();
-            if (request.buffer == nullptr) break;
-            if (request.count)
-            {
-                Timer timerWrite;
-                writer.write_at(request.buffer, request.count, request.offset);
-                bufferIOWrite += timerWrite.get();
-            }
-            notifyQueue.push(request.count);
-        }
-    });
+    std::thread ioThread = ioWorker(ioQueue);
 
     Timer timerMerge;
     notifyQueue.push(0);
@@ -94,14 +80,13 @@ static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         size_t written = notifyQueue.pop();
         timerMerge.reset();
         outBuffer.processedCount += written;
-        WriteRequest request{outBuffer.getActiveBuffer(), outBuffer.offset, outBuffer.fileOffset + outBuffer.processedCount};
-        writeQueue.push(request);
+        ioQueue.push(IORequest(outBuffer.getActiveBuffer(), outBuffer.offset, outBuffer.fileOffset + outBuffer.processedCount, &notifyQueue, &writer));
         outBuffer.swapBuffer();
         outBuffer.offset = 0;
     }
     notifyQueue.pop();
-    writeQueue.push(WriteRequest{ nullptr, 0, 0 });
-    writeThread.join();
+    ioQueue.push(IORequest::last());
+    ioThread.join();
 
     std::cerr << "Merge processing: " << mergeTime << std::endl;
 }
@@ -111,11 +96,13 @@ void merge_files(std::vector<FileRecord>& files,
         std::vector<ReadBuffer>& buffers,
         const std::string& outfile, size_t size, size_t threads)
 {
-    FileWriter writer(outfile.c_str());
-    writer.preallocate(size);
-
     size_t totalSize = size / TUPLE_SIZE;
-    merge_range(buffers, totalSize, 0, outfile);
+
+    FileWriter writer(outfile.c_str());
+    writer.preallocate(totalSize);
+
+    bufferIORead = 0;
+    merge_range(buffers, totalSize, 0, writer);
 
     std::cerr << "Merge read IO: " << bufferIORead << std::endl;
     std::cerr << "Merge write IO: " << bufferIOWrite << std::endl;
