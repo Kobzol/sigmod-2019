@@ -16,7 +16,8 @@ public:
     enum class Type {
         Read,
         ReadBuffer,
-        Write
+        Write,
+        End
     };
 
     IORequest(Record* buffer,
@@ -44,10 +45,6 @@ public:
     {
 
     }
-    IORequest(): buffer(nullptr)
-    {
-
-    }
 
     static IORequest last()
     {
@@ -56,7 +53,7 @@ public:
 
     bool isLast() const
     {
-        return this->buffer == nullptr;
+        return this->type == Type::End;
     }
 
     Record* buffer;
@@ -70,6 +67,12 @@ public:
         ReadBuffer* readBuffer;
     };
     Type type;
+
+private:
+    IORequest(): type(Type::End)
+    {
+
+    }
 };
 
 std::thread ioWorker(SyncQueue<IORequest>& ioQueue);
