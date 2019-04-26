@@ -16,8 +16,8 @@ public:
         this->file = fopen(path, "rb");
         CHECK_NULL_ERROR(this->file);
         this->size = file_size(file);
-        this->mmapData = this->readData = reinterpret_cast<Record*>(mmap(nullptr, this->size, PROT_READ, MAP_SHARED, fileno(this->file), 0));
-        CHECK_NEG_ERROR(madvise(this->mmapData, this->size, MADV_WILLNEED));
+        this->mmapData = this->readData = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_READ, MAP_SHARED, fileno(this->file), 0));
+        CHECK_NEG_ERROR(madvise(this->mmapData, this->size, MADV_RANDOM));
         CHECK_NEG_ERROR((ssize_t) this->mmapData);
     }
     explicit MmapReader(const char* path, size_t start, size_t size): size(size)

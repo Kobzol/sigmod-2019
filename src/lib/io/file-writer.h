@@ -60,6 +60,30 @@ public:
             total += written;
         }
     }
+    void writeout(size_t count, size_t offset)
+    {
+        CHECK_NEG_ERROR(sync_file_range(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE, SYNC_FILE_RANGE_WRITE));
+    }
+    void discard(size_t count, size_t offset)
+    {
+        CHECK_NEG_ERROR(sync_file_range(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE,
+                                        SYNC_FILE_RANGE_WAIT_BEFORE |
+                                        SYNC_FILE_RANGE_WRITE |
+                                        SYNC_FILE_RANGE_WAIT_AFTER));
+        CHECK_NEG_ERROR(posix_fadvise(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE, POSIX_FADV_DONTNEED));
+    }
+
+    void write_discard(Record* record, size_t count, ssize_t offset, size_t previousCount, size_t discardWindow)
+    {
+        this->write_at(record, count, offset);
+        writeout(count, offset);
+
+        ssize_t discardOffset = offset - discardWindow * previousCount;
+        if (discardOffset >= 0)
+        {
+            discard(previousCount, discardOffset);
+        }
+    }
 
 private:
     int file;

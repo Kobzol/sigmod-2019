@@ -18,6 +18,7 @@
 #include <atomic>
 #include <cmath>
 #include <omp.h>
+#include <sys/uio.h>
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
@@ -136,11 +137,10 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
 }
 void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
-#define BUFFER_SIZE 100000000
+#define BUFFER_SIZE 50000000
 
     ssize_t count = size / TUPLE_SIZE;
-    auto sortedOutput = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
-
+    auto sortedIndices = std::unique_ptr<uint32_t[]>(new uint32_t[count]);
     {
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
         auto buffer = std::unique_ptr<Record[]>(new Record[BUFFER_SIZE]);
@@ -153,7 +153,6 @@ void sort_external_records(const std::string& infile, size_t size, const std::st
         for (ssize_t i = 0; i < chunks; i++)
         {
             auto length = std::min(static_cast<ssize_t>(BUFFER_SIZE), count - offset);
-            if (length < 1) break;
             reader.read(buffer.get(), length);
 
 #pragma omp parallel for num_threads(threads)
@@ -168,47 +167,47 @@ void sort_external_records(const std::string& infile, size_t size, const std::st
         timerRead.print("Read");
 
         Timer timerSort;
+        auto sortedOutput = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
         sort_records_direct(sortBuffer.get(), sortedOutput.get(), count, threads);
         timerSort.print("Sort");
+
+        Timer timerCompress;
+#pragma omp parallel for num_threads(threads)
+        for (ssize_t i = 0; i < count; i++)
+        {
+            sortedIndices[i] = sortedOutput[i].index;
+        }
+        timerCompress.print("Compress");
     }
 
-    /*auto writeThreads = threads;
-    ssize_t chunkSize = std::ceil(count / (double) writeThreads);
-    MemoryReader reader(infile.c_str());
-
-#pragma omp parallel num_threads(writeThreads)
-    {
-        FileWriter writer(outfile.c_str());
-        ssize_t start = omp_get_thread_num() * chunkSize;
-        auto end = std::min(count, start + chunkSize);
-
-        writer.seek(start);
-        for (ssize_t i = start; i < end; i++)
-        {
-            writer.splice_from(reader, sortedOutput[i].index, 1);
-        }
-    }*/
-
-    MmapReader mmapReader(infile.c_str());
+#define OUT_BUFFER_SIZE 1024
     FileWriter writer(outfile.c_str());
-
-#define OUT_BUFFER_SIZE 1024 * 1024 * 10
-
+    MmapReader mmapReader(infile.c_str());
     auto* __restrict__ source = mmapReader.get_data();
-    auto buffer = std::unique_ptr<Record[]>(new Record[OUT_BUFFER_SIZE]);
-    size_t bufferOffset = 0;
-    auto chunks = std::ceil(count / (double) OUT_BUFFER_SIZE);
 
-    Timer timerWrite;
-    for (ssize_t i = 0; i < chunks; i++)
+    struct iovec vectors[OUT_BUFFER_SIZE];
+    for (auto& vector: vectors)
     {
-        auto length = std::min(static_cast<size_t>(OUT_BUFFER_SIZE), count - bufferOffset);
-        for (size_t j = 0; j < length; j++)
+        vector.iov_len = 100;
+    }
+
+    ssize_t bufferOffset = 0;
+
+    Timer timerFinal;
+    while (bufferOffset < count)
+    {
+        auto length = std::min(static_cast<ssize_t>(OUT_BUFFER_SIZE), count - bufferOffset);
+
+        for (ssize_t i = 0; i < length; i++)
         {
-            buffer.get()[j] = source[sortedOutput.get()[bufferOffset + j].index];
+            vectors[i].iov_base = (void*) (source + sortedIndices[bufferOffset + i]);
         }
-        writer.write_at(buffer.get(), length, bufferOffset);
+
+        Timer timerWrite;
+        CHECK_NEG_ERROR(writev(writer.file, vectors, length));
+        timerWrite.print("Write");
+
         bufferOffset += length;
     }
-    timerWrite.print("Write");
+    timerFinal.print("Final write");
 }

@@ -2,4 +2,18 @@ Team: vsb_ber0134
 
 Institution: VSB-TUO
 
-Jakub Beránek, BER0134, VSB-TUO, IT4Innovations, PhD student (first years), jakub.beranek@vsb.cz
+Jakub Beránek, BER0134, VSB-TUO, IT4Innovations, PhD student (first year), jakub.beranek@vsb.cz
+
+Advisor:
+- Ing. Radim Bača, Phd., FEI, VSB-TUO, radim.baca@vsb.cz
+
+Description:
+In-memory sort divides the input into multiple chunks and overlaps reading and sorting of the individual chunks.
+The data is preprocessed to only sort the keys, using MSD radix sort.
+
+External memory sort also overlaps reading the input and sorting, the intermediate results are written to disk,
+except for the last results that still fit into memory. The intermediate results are gradually loaded from disk, merged
+and written to output. The merge process uses overlapped I/O and double-buffering.
+
+Third-party code:
+- radix sort (https://github.com/voutcn/kxsort), MIT
