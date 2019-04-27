@@ -20,7 +20,7 @@ static void sort(const std::string& infile, const std::string& outfile)
     if (size <= LIMIT_IN_MEMORY_SORT)
     {
         std::cerr << "Sort in-memory" << std::endl;
-        sort_inmemory_overlapped(infile, size, outfile, threadCount);
+        sort_inmemory(infile, size, outfile, threadCount);
     }
     else
     {

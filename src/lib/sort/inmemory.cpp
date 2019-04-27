@@ -39,8 +39,19 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
     sort_records(buffer.get(), output.get(), count, threads);
     timerSort.print("Sort");
 
+    auto indices = std::unique_ptr<uint32_t[]>(new uint32_t[count]);
+    Timer timerCompress;
+#pragma omp parallel for num_threads(threads)
+    for (ssize_t i = 0; i < count; i++)
+    {
+        indices[i] = output[i].index;
+    }
+    timerCompress.print("Compress");
+
+    output.reset();
+
     Timer timerWrite;
-    write_mmap(buffer.get(), output.get(), static_cast<size_t>(count), outfile, threads);
+    write_mmap(buffer.get(), indices.get(), static_cast<size_t>(count), outfile, threads);
 //    write_buffered(buffer.get(), output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
 //    write_sequential_io(buffer.get(), output.get(), static_cast<size_t>(count), outfile, WRITE_BUFFER_COUNT, threads);
     timerWrite.print("Write");

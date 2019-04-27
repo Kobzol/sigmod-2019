@@ -204,7 +204,7 @@ void sort_external_records(const std::string& infile, size_t size, const std::st
         }
 
         Timer timerWrite;
-        CHECK_NEG_ERROR(writev(writer.file, vectors, length));
+//        CHECK_NEG_ERROR(writev(writer.file, vectors, length));
         timerWrite.print("Write");
 
         bufferOffset += length;

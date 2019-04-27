@@ -20,7 +20,7 @@ public:
         CHECK_NEG_ERROR(fd);
         CHECK_NEG_ERROR(ftruncate64(fd, this->size));
 
-        this->data = reinterpret_cast<Record*>(mmap(nullptr, this->size, PROT_WRITE, MAP_SHARED, fd, 0));
+        this->data = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_WRITE, MAP_SHARED, fd, 0));
         CHECK_NEG_ERROR((ssize_t) this->data);
         CHECK_NEG_ERROR(fclose(file));
     }
@@ -36,6 +36,11 @@ public:
     Record* get_data() const
     {
         return this->data;
+    }
+
+    void expect_random()
+    {
+        CHECK_NEG_ERROR(madvise(this->data, this->size, MADV_RANDOM));
     }
 
 private:
