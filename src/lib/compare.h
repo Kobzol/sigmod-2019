@@ -3,6 +3,7 @@
 #include <byteswap.h>
 
 #include "record.h"
+#include "util.h"
 
 inline bool cmp_header(const Header& lhs, const Header& rhs)
 {

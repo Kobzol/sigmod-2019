@@ -36,6 +36,7 @@ struct OverlapRange {
 
 void sort_inmemory(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
+void sort_inmemory_count(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads);

@@ -1,9 +1,10 @@
 #include "io.h"
 #include "mmap-writer.h"
 #include "file-writer.h"
+#include "worker.h"
 #include "../sync.h"
 #include "../sort/merge.h"
-#include "worker.h"
+#include "../sort/buffer.h"
 
 #include <vector>
 #include <memory>
@@ -16,28 +17,6 @@
 #include <condition_variable>
 #include <thread>
 #include <atomic>
-
-
-struct SyncBuffer {
-public:
-    SyncBuffer() = default;
-    explicit SyncBuffer(size_t size): size(size)
-    {
-        this->buffer = std::unique_ptr<Record[]>(new Record[size]);
-    }
-    SyncBuffer(SyncBuffer&& other) noexcept
-    {
-        this->size = other.size;
-        this->offset = other.offset;
-        this->buffer = std::move(other.buffer);
-        this->dirty.store(other.dirty.load());
-    }
-
-    size_t size = 0;
-    size_t offset = 0;
-    std::unique_ptr<Record[]> buffer;
-    std::atomic<bool> dirty{false};
-};
 
 void write_buffered(const Record *records, const SortRecord *sorted, size_t count, const std::string& output,
                     size_t buffer_size, size_t threads)
@@ -132,59 +111,12 @@ void write_mmap(const Record* __restrict__ records, const uint32_t* __restrict__
     {
         target[i] = records[sorted[i]];
     }
-    /*int fd = open(output.c_str(), O_RDWR | O_CREAT | O_APPEND, 0666);
-    CHECK_NEG_ERROR(fd);
-    CHECK_NEG_ERROR(ftruncate64(fd, count * TUPLE_SIZE));
 
-    int chunks = 4;
-    ssize_t perChunk = std::ceil(count / (double) chunks);
-
-    ssize_t written = 0;
-    for (int c = 0; c < chunks; c++)
-    {
-        Timer timerCopy;
-        auto length = std::min(perChunk, count - written);
-        auto byteLength = length * TUPLE_SIZE;
-        auto offset = written * TUPLE_SIZE;
-        size_t moveOffset = 0;
-
-        if (offset % 4096 != 0)
-        {
-            moveOffset = offset % 4096;
-            offset -= moveOffset;
-            byteLength += moveOffset;
-        }
-
-        auto* __restrict__ target = static_cast<char*>(mmap64(nullptr, byteLength, PROT_WRITE, MAP_SHARED,
-                                                                  fd, offset));
-        CHECK_NEG_ERROR((ssize_t) target);
-        auto* __restrict__ writeTarget = reinterpret_cast<Record*>(target + moveOffset);
-
-        auto* __restrict__ start = sorted + written;
-
-#pragma omp parallel for num_threads(threads / 2)
-        for (ssize_t i = 0; i < length; i++)
-        {
-            writeTarget[i] = records[start[i]];
-        }
-
-        timerCopy.print("Copy");
-
-        Timer timerUnmap;
-        CHECK_NEG_ERROR(munmap(target, byteLength));
-        timerUnmap.print("Unmap");
-
-        written += length;
-    }
-
-    CHECK_NEG_ERROR(close(fd));
-
-    auto mask = _mm_set1_epi8(0xFF);
+    /*auto mask = _mm_set1_epi8(0xFF);
 
 #pragma omp parallel for num_threads(threads / 2)
     for (ssize_t i = 0; i < count; i++)
     {
-        target[i] = records[sorted[i]];
         auto* ptr = reinterpret_cast<const char*>(records + sorted[i]);
         auto* dest = reinterpret_cast<char*>(&target[i]);
         _mm256_storeu_si256((__m256i*)&target[i][0], _mm256_loadu_si256((__m256i*)&(*ptr)[0]));

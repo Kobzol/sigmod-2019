@@ -12,9 +12,14 @@
 
 class FileWriter {
 public:
-    explicit FileWriter(const char* path)
+    explicit FileWriter(const char* path, bool direct = false)
     {
-        this->file = open(path, O_WRONLY | O_CREAT, 0666);
+        uint32_t mode = O_WRONLY | O_CREAT;
+        if (direct)
+        {
+            mode |= O_DIRECT;
+        }
+        this->file = open(path, mode, 0666);
         CHECK_NEG_ERROR(this->file);
     }
     ~FileWriter()
@@ -88,3 +93,4 @@ public:
 private:
     int file;
 };
+

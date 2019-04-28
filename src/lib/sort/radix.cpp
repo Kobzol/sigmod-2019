@@ -19,6 +19,17 @@ struct RadixTraitsRowSortRecord
         return cmp_header(lhs.header, rhs.header);
     }
 };
+struct RadixTraitsRowRecord
+{
+    static const int nBytes = KEY_SIZE;
+
+    int kth_byte(const Record& x, int k) {
+        return x[KEY_SIZE - 1 - k] & ((unsigned char) 0xFF);
+    }
+    bool compare(const Record& lhs, const Record& rhs) {
+        return cmp_record(lhs, rhs);
+    }
+};
 
 void lsd_radix_sort(SortRecord* data, size_t size)
 {
@@ -69,4 +80,8 @@ void lsd_radix_sort(SortRecord* data, size_t size)
 void msd_radix_sort(SortRecord* data, size_t size)
 {
     kx::radix_sort(data, data + size, RadixTraitsRowSortRecord());
+}
+void msd_radix_sort(Record* data, size_t size)
+{
+    kx::radix_sort(data, data + size, RadixTraitsRowRecord());
 }

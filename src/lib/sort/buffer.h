@@ -94,9 +94,18 @@ struct WriteBuffer: public Buffer {
     {
         for (auto& buffer : this->buffers)
         {
-            buffer = std::unique_ptr<Record[]>(new Record[size]);
+            CHECK_NEG_ERROR(posix_memalign((void**) &buffer, 4096, size * TUPLE_SIZE));
         }
-        this->activeBuffer = this->buffers[this->bufferIndex].get();
+        this->activeBuffer = this->buffers[this->bufferIndex];
+    }
+    DISABLE_COPY(WriteBuffer);
+    DISABLE_MOVE(WriteBuffer);
+    ~WriteBuffer()
+    {
+        for (auto& buffer : this->buffers)
+        {
+            free(buffer);
+        }
     }
 
     void store(const Record& record)
@@ -140,10 +149,10 @@ struct WriteBuffer: public Buffer {
     void swapBuffer()
     {
         this->bufferIndex = 1 - this->bufferIndex;
-        this->activeBuffer = this->buffers[this->bufferIndex].get();
+        this->activeBuffer = this->buffers[this->bufferIndex];
     }
 
     Record* activeBuffer;
     size_t bufferIndex = 0;
-    std::unique_ptr<Record[]> buffers[2];
+    Record* buffers[2];
 };
