@@ -16,6 +16,7 @@
 #include <cassert>
 #include <omp.h>
 #include <sys/uio.h>
+#include <x86intrin.h>
 
 void sort_inmemory(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
@@ -267,9 +268,9 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
         {
             auto buffer = work.pop();
             if (buffer == nullptr) break;
-            Timer timerRead;
+//            Timer timerRead;
             reader.read(buffer, ranges[i].count());
-            timerRead.print("Read");
+//            timerRead.print("Read");
             queue.push(ranges[i]);
         }
     });
@@ -287,7 +288,7 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
         auto rangeCount = range.count();
         auto active = readBuffers[activeBuffer].get();
 
-        Timer timerInnerDistribute;
+//        Timer timerInnerDistribute;
 #pragma omp parallel num_threads(numThreads)
         {
             auto id = omp_get_thread_num();
@@ -311,7 +312,7 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
                 }
             }
         }
-        timerInnerDistribute.print("Distribute inner");
+//        timerInnerDistribute.print("Distribute inner");
 
         activeBuffer = 1 - activeBuffer;
     }
@@ -325,7 +326,7 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
     timerDistribute.print("Distribute");
 
     Timer timerSort;
-#pragma omp parallel for num_threads(threads) schedule(dynamic)
+#pragma omp parallel for num_threads(10) schedule(dynamic)
     for (size_t i = 0; i < 256; i++)
     {
         if (regions[i].count)
@@ -351,8 +352,8 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
             {
                 target[j] = regions[i].address[j];
             }
-            target += regionCount;
             regions[i].dealloc();
+            target += regionCount;
 //            timerWrite.print("write");
         }
         else regions[i].dealloc();

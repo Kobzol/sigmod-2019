@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <atomic>
+#include <cmath>
 
 #include "../record.h"
 #include "../../settings.h"
@@ -60,7 +61,9 @@ struct ReadBuffer: public Buffer {
             : Buffer(memorySize), memory(memory)
     {
         this->totalSize = memorySize;
-        this->processedCount = memorySize;
+        this->chunk = std::ceil(memorySize / (double) MERGE_INMEMORY_SPLIT_PARTS);
+        this->processedCount = this->chunk;
+        this->size = this->chunk;
     }
 
     const Record& load() const
@@ -72,6 +75,26 @@ struct ReadBuffer: public Buffer {
     {
         auto left = this->left();
         left = std::min(left, static_cast<size_t>(size));
+
+        if (!this->reader)
+        {
+            auto chunk = std::max(0l, static_cast<ssize_t>(this->chunk) - 100l);
+            auto address = reinterpret_cast<size_t>(this->memory + (this->processedCount - this->chunk));
+            if (address % 4096 != 0)
+            {
+                address -= address % 4096;
+            }
+            CHECK_NEG_ERROR(madvise((void*) address, chunk * TUPLE_SIZE, MADV_FREE));
+
+            if (!left) return 0;
+
+            size_t move = std::min(this->chunk, this->totalSize - this->processedCount);
+            this->processedCount += move;
+            this->size += move;
+
+            return move;
+        }
+
         if (left)
         {
             Timer timerRead;
@@ -87,6 +110,7 @@ struct ReadBuffer: public Buffer {
     Record* memory = nullptr;
     std::unique_ptr<Record[]> data;
     MemoryReader* reader = nullptr;
+    size_t chunk = 0;
 };
 
 struct WriteBuffer: public Buffer {
