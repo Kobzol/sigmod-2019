@@ -20,12 +20,12 @@ static void sort(const std::string& infile, const std::string& outfile)
     if (size * 2 <= LIMIT_IN_MEMORY_SORT) // input and output fit into memory
     {
         std::cerr << "Sort in-memory" << std::endl;
-        sort_inmemory(infile, size, outfile, threadCount);
+        sort_inmemory_overlapped(infile, size, outfile, threadCount);
     }
     else if (size <= LIMIT_IN_MEMORY_SORT) // only input fits into memory
     {
         std::cerr << "Sort in-memory distribute" << std::endl;
-        sort_inmemory_count(infile, size, outfile, threadCount);
+        sort_inmemory_distribute(infile, size, outfile, threadCount);
     }
     else // neither input nor output fits into memory
     {

@@ -20,7 +20,6 @@
 void sort_inmemory(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
     ssize_t count = size / TUPLE_SIZE;
-    auto output = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
 
     auto buffer = std::unique_ptr<Record[]>(new Record[count]);
     Timer timerLoad;
@@ -36,18 +35,21 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
     }
     timerLoad.print("Read");
 
-    Timer timerSort;
-    sort_records(buffer.get(), output.get(), count, threads);
-    timerSort.print("Sort");
-
     auto indices = std::unique_ptr<uint32_t[]>(new uint32_t[count]);
-#pragma omp parallel for num_threads(threads)
-    for (ssize_t i = 0; i < count; i++)
     {
-        indices[i] = output[i].index;
-    }
+        auto output = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
+        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[count]);
 
-    output.reset();
+        Timer timerSort;
+        sort_records(buffer.get(), output.get(), targets.get(), count, threads);
+        timerSort.print("Sort");
+
+#pragma omp parallel for num_threads(threads)
+        for (ssize_t i = 0; i < count; i++)
+        {
+            indices[i] = output[i].index;
+        }
+    }
 
     Timer timerWrite;
     write_mmap(buffer.get(), indices.get(), static_cast<size_t>(count), outfile, threads);
@@ -150,17 +152,20 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
     });
 
     std::vector<MergeRange> mergeRanges(SORT_GROUP_COUNT);
-
-    for (auto& sortedRecord : sortedRecords)
     {
-        auto range = queue.pop();
-        Timer timerSort;
-        auto groupData = sort_records(buffer.get() + range.start, sortedRecord.get(), range.count(), threads);
-        for (size_t i = 0; i < groupData.size(); i++)
+        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[perPart]);
+
+        for (auto& sortedRecord: sortedRecords)
         {
-            mergeRanges[i].groups.push_back(groupData[i]);
+            auto range = queue.pop();
+            Timer timerSort;
+            auto groupData = sort_records(buffer.get() + range.start, sortedRecord.get(), targets.get(), range.count(), threads);
+            for (size_t i = 0; i < groupData.size(); i++)
+            {
+                mergeRanges[i].groups.push_back(groupData[i]);
+            }
+            timerSort.print("Sort");
         }
-        timerSort.print("Sort");
     }
     readThread.join();
 
@@ -222,21 +227,20 @@ struct MemoryRegion {
     Record* address = nullptr;
 };
 
-
-void sort_inmemory_count(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
+void sort_inmemory_distribute(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
     Timer timerDistribute;
     ssize_t count = size / TUPLE_SIZE;
 
     std::vector<OverlapRange> ranges;
-    auto perPart = static_cast<size_t>(std::ceil(count / (double) INMEMORY_OVERLAP_PARTS));
+    auto perPart = static_cast<size_t>(std::ceil(count / (double) INMEMORY_DISTRIBUTE_OVERLAP_PARTS));
     std::unique_ptr<Record[]> readBuffers[2] = {
             std::unique_ptr<Record[]>(new Record[perPart]),
             std::unique_ptr<Record[]>(new Record[perPart])
     };
     size_t activeBuffer = 0;
 
-    for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
+    for (int i = 0; i < INMEMORY_DISTRIBUTE_OVERLAP_PARTS; i++)
     {
         auto start = i * perPart;
         auto end = std::max(start, std::min(static_cast<size_t>(count), start + perPart));
@@ -259,7 +263,7 @@ void sort_inmemory_count(const std::string& infile, size_t size, const std::stri
     std::thread readThread([&ranges, &work, &queue, &infile]() {
         MemoryReader reader(infile.c_str());
 
-        for (int i = 0; i < INMEMORY_OVERLAP_PARTS; i++)
+        for (int i = 0; i < INMEMORY_DISTRIBUTE_OVERLAP_PARTS; i++)
         {
             auto buffer = work.pop();
             if (buffer == nullptr) break;
@@ -272,10 +276,10 @@ void sort_inmemory_count(const std::string& infile, size_t size, const std::stri
 
     size_t numThreads = 8;
     work.push(readBuffers[activeBuffer].get());
-    for (int p = 0; p < INMEMORY_OVERLAP_PARTS; p++)
+    for (int p = 0; p < INMEMORY_DISTRIBUTE_OVERLAP_PARTS; p++)
     {
         auto range = queue.pop();
-        if (p != INMEMORY_OVERLAP_PARTS - 1)
+        if (p != INMEMORY_DISTRIBUTE_OVERLAP_PARTS - 1)
         {
             work.push(readBuffers[1 - activeBuffer].get());
         }
@@ -342,7 +346,7 @@ void sort_inmemory_count(const std::string& infile, size_t size, const std::stri
         if (regionCount)
         {
 //            Timer timerWrite;
-#pragma omp parallel for num_threads(threads)
+#pragma omp parallel for num_threads(threads / 2)
             for (ssize_t j = 0; j < regionCount; j++)
             {
                 target[j] = regions[i].address[j];

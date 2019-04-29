@@ -58,6 +58,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 &notifyQueue, &reader));
 
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
+        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[EXTERNAL_SORT_PARTIAL_COUNT]);
 
         for (size_t r = 0; r < overlapRanges.size(); r++)
         {
@@ -91,13 +92,13 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             std::string out = WRITE_LOCATION + "/out-" + std::to_string(files.size());
             std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
 
-            Timer timer;
-            sort_records(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), threads);
-            timer.print("Sort file");
-
             if (lastPart)
             {
-                Timer timerPartCopy;
+                Timer timer;
+                sort_records_copy(buffers[activeBuffer].get(), buffers[1 - activeBuffer].get(), targets.get(), sortBuffer.get(), range.count(), threads);
+                timer.print("Sort file");
+
+                /*Timer timerPartCopy;
                 auto* __restrict__ source = buffers[activeBuffer].get();
                 auto* __restrict__ target = buffers[1 - activeBuffer].get();
 #pragma omp parallel for num_threads(threads)
@@ -105,9 +106,16 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 {
                     target[i] = source[sortBuffer.get()[i].index];
                 }
-                timerPartCopy.print("Last part copy");
+                timerPartCopy.print("Last part copy");*/
             }
             else
+            {
+                Timer timer;
+                sort_records(buffers[activeBuffer].get(), sortBuffer.get(), targets.get(), range.count(), threads);
+                timer.print("Sort file");
+            }
+
+            if (!lastPart)
             {
                 Timer timerWrite;
                 write_buffered(buffers[activeBuffer].get(), sortBuffer.get(), range.count(), out,

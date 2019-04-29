@@ -33,15 +33,26 @@ struct OverlapRange {
     }
 };
 
+struct GroupTarget
+{
+    uint32_t index;
+    uint8_t group;
+} __attribute__((packed));
 
 void sort_inmemory(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
-void sort_inmemory_count(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
+void sort_inmemory_distribute(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
 void sort_external_records(const std::string& infile, size_t size, const std::string& outfile, size_t threads);
-std::vector<GroupData> sort_records(const Record* input, SortRecord* output,
-        ssize_t count, size_t threads);
+
+std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord* __restrict__ output,
+                                    GroupTarget* targets,
+                                    ssize_t count, size_t threads);
+void sort_records_copy(const Record* input,
+        Record* target,
+        GroupTarget* targets,
+        SortRecord* output, ssize_t count, size_t threads);
 std::vector<GroupData> sort_records_direct(const SortRecord* input, SortRecord* output,
                                     ssize_t count, size_t threads);
 std::vector<std::vector<SortRecord>> sort_records_per_parts(const Record* __restrict__ input,

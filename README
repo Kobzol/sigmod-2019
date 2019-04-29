@@ -9,9 +9,11 @@ Advisor:
 
 Description:
 In-memory sort divides the input into multiple chunks and overlaps reading and sorting of the individual chunks.
-The data is preprocessed to only sort the keys, using MSD radix sort.
+The data is preprocessed to only sort the keys using MSD radix sort.
+If input and output does not fit into memory simultaneously, the sorted input is written to the output in parts, while
+being gradially deallocated, to free up memory.
 
-External memory sort also overlaps reading the input and sorting, the intermediate results are written to disk,
+External memory sort also overlaps reading the input and sorting. The intermediate results are written to disk,
 except for the last results that still fit into memory. The intermediate results are gradually loaded from disk, merged
 and written to output. The merge process uses overlapped I/O and double-buffering.
 
