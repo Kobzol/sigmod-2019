@@ -198,6 +198,7 @@ struct MemoryRegion {
         this->address = static_cast<Record*>(mmap64(nullptr, count * TUPLE_SIZE, PROT_READ | PROT_WRITE,
                                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
         CHECK_NEG_ERROR((ssize_t) this->address);
+        CHECK_NEG_ERROR(madvise(this->address, count * TUPLE_SIZE, MADV_HUGEPAGE));
         this->capacity = count;
     }
     void realloc(size_t count)
@@ -205,6 +206,7 @@ struct MemoryRegion {
         this->address = static_cast<Record*>(mremap(this->address, this->capacity * TUPLE_SIZE, count * TUPLE_SIZE,
                 MREMAP_MAYMOVE));
         CHECK_NEG_ERROR((ssize_t) this->address);
+        CHECK_NEG_ERROR(madvise(this->address, count * TUPLE_SIZE, MADV_HUGEPAGE));
         this->capacity = count;
     }
 
