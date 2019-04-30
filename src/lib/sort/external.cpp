@@ -84,7 +84,6 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                             files[i].count,
                             &readers[i]
                     );
-                    readers[i].readahead(files[i].count, 0);
                 }
                 for (auto& buffer: readBuffers)
                 {

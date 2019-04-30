@@ -99,6 +99,7 @@ struct ReadBuffer: public Buffer {
         {
             Timer timerRead;
             this->reader->read_at(this->memory, left, this->fileOffset + this->processedCount);
+            this->reader->dontneed(left, this->fileOffset + this->processedCount);
             this->processedCount += left;
             this->size = left;
             this->offset = 0;

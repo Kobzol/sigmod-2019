@@ -64,6 +64,10 @@ public:
     {
         CHECK_NEG_ERROR(::readahead(this->handle, offset * TUPLE_SIZE, count * TUPLE_SIZE));
     }
+    void dontneed(size_t count, size_t offset)
+    {
+        CHECK_NEG_ERROR(::posix_fadvise64(this->handle, offset * TUPLE_SIZE, count * TUPLE_SIZE, POSIX_FADV_DONTNEED));
+    }
 
     size_t get_size() const
     {
