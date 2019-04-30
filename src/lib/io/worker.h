@@ -17,33 +17,47 @@ public:
         Read,
         ReadBuffer,
         Write,
+        WriteDiscard,
         End
     };
 
-    IORequest(Record* buffer,
-              size_t count,
-              size_t offset,
-              SyncQueue<size_t>* queue,
-              MemoryReader* reader):
-            buffer(buffer), count(count), offset(offset), queue(queue), reader(reader), type(Type::Read)
+    static IORequest read(Record* buffer,
+                          size_t count,
+                          size_t offset,
+                          SyncQueue<size_t>* queue,
+                          MemoryReader* reader)
     {
-
+        IORequest req(Type::Read, buffer, count, offset, queue);
+        req.reader = reader;
+        return req;
     }
-    IORequest(Record* buffer,
-              size_t count,
-              size_t offset,
-              SyncQueue<size_t>* queue,
-              FileWriter* writer):
-            buffer(buffer), count(count), offset(offset), queue(queue), writer(writer), type(Type::Write)
+    static IORequest write(Record* buffer,
+                          size_t count,
+                          size_t offset,
+                          SyncQueue<size_t>* queue,
+                          FileWriter* writer)
     {
-
+        IORequest req(Type::Write, buffer, count, offset, queue);
+        req.writer = writer;
+        return req;
     }
-    IORequest(size_t count,
-              SyncQueue<size_t>* queue,
-              ReadBuffer* readBuffer):
-            count(count), queue(queue), readBuffer(readBuffer), type(Type::ReadBuffer)
+    static IORequest write_discard(Record* buffer,
+                           size_t count,
+                           size_t offset,
+                           SyncQueue<size_t>* queue,
+                           FileWriter* writer)
     {
-
+        IORequest req(Type::WriteDiscard, buffer, count, offset, queue);
+        req.writer = writer;
+        return req;
+    }
+    static IORequest read_buffer(size_t count,
+                          SyncQueue<size_t>* queue,
+                          ReadBuffer* readBuffer)
+    {
+        IORequest req(Type::ReadBuffer, nullptr, count, 0, queue);
+        req.readBuffer = readBuffer;
+        return req;
     }
 
     static IORequest last()
@@ -70,6 +84,15 @@ public:
 
 private:
     IORequest(): type(Type::End)
+    {
+
+    }
+    IORequest(Type type,
+            Record* buffer,
+            size_t count,
+            size_t offset,
+            SyncQueue<size_t>* queue):
+            buffer(buffer), count(count), offset(offset), queue(queue), type(type)
     {
 
     }

@@ -81,16 +81,21 @@ public:
     void write_discard(Record* record, size_t count, ssize_t offset, size_t previousCount, size_t discardWindow)
     {
         this->write_at(record, count, offset);
-        writeout(count, offset);
+
+        size_t writeoutWindow = discardWindow / 2;
+        ssize_t writeoutOffset = offset - writeoutWindow * previousCount;
+        if (writeoutOffset >= 0)
+        {
+            this->writeout(previousCount, writeoutOffset);
+        }
 
         ssize_t discardOffset = offset - discardWindow * previousCount;
         if (discardOffset >= 0)
         {
-            discard(previousCount, discardOffset);
+            this->discard(previousCount, discardOffset);
         }
     }
 
 private:
     int file;
 };
-

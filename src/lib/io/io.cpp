@@ -89,7 +89,7 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
 
         size_t written = notifyQueue.pop();
         outBuffer.processedCount += written;
-        ioQueue.push(IORequest(outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount, &notifyQueue,
+        ioQueue.push(IORequest::write(outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount, &notifyQueue,
                 &writer));
         outBuffer.swapBuffer();
     }

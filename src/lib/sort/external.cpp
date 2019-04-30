@@ -69,7 +69,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     readBuffers.reserve(files.size() + 1);
 
     {
-        ioQueue.push(IORequest(buffers[activeBuffer], overlapRanges[0].count(), overlapRanges[0].start,
+        ioQueue.push(IORequest::read(buffers[activeBuffer], overlapRanges[0].count(), overlapRanges[0].start,
                 &notifyQueue, &reader));
 
         auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[offsetSize]);
@@ -83,7 +83,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             if (!lastPart)
             {
                 // prefetch next part from disk
-                ioQueue.push(IORequest(buffers[1 - activeBuffer], overlapRanges[r + 1].count(),
+                ioQueue.push(IORequest::read(buffers[1 - activeBuffer], overlapRanges[r + 1].count(),
                         overlapRanges[r + 1].start, &notifyQueue, &reader));
             }
             else
@@ -99,7 +99,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 }
                 for (auto& buffer: readBuffers)
                 {
-                    ioQueue.push(IORequest(MERGE_INITIAL_READ_COUNT, &notifyQueue, &buffer));
+                    ioQueue.push(IORequest::read_buffer(MERGE_INITIAL_READ_COUNT, &notifyQueue, &buffer));
                 }
             }
 

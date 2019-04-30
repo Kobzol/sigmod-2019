@@ -80,7 +80,7 @@ static void merge_range(std::vector<ReadBuffer>& buffers, size_t totalSize,
         size_t written = notifyQueue.pop();
         timerMerge.reset();
         outBuffer.processedCount += written;
-        ioQueue.push(IORequest(outBuffer.getActiveBuffer(), outBuffer.offset, outBuffer.fileOffset + outBuffer.processedCount, &notifyQueue, &writer));
+        ioQueue.push(IORequest::write(outBuffer.getActiveBuffer(), outBuffer.offset, outBuffer.fileOffset + outBuffer.processedCount, &notifyQueue, &writer));
         outBuffer.swapBuffer();
         outBuffer.offset = 0;
     }
