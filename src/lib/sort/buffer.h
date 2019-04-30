@@ -8,6 +8,7 @@
 #include "../../settings.h"
 #include "../io/memory-reader.h"
 #include "../io/file-writer.h"
+#include "../memory.h"
 
 extern std::atomic<size_t> bufferIORead;
 extern std::atomic<size_t> bufferIOWrite;
@@ -50,7 +51,7 @@ public:
 
 struct ReadBuffer: public Buffer {
     explicit ReadBuffer(size_t bufferSize, size_t fileOffset, size_t totalSize, MemoryReader* reader)
-    : Buffer(bufferSize), data(std::unique_ptr<Record[]>(new Record[bufferSize])), reader(reader)
+    : Buffer(bufferSize), data(bufferSize), reader(reader)
     {
         this->fileOffset = fileOffset;
         this->totalSize = totalSize;
@@ -109,7 +110,7 @@ struct ReadBuffer: public Buffer {
     }
 
     Record* memory = nullptr;
-    std::unique_ptr<Record[]> data;
+    HugePageBuffer<Record> data;
     MemoryReader* reader = nullptr;
     size_t chunk = 0;
 };
@@ -117,21 +118,14 @@ struct ReadBuffer: public Buffer {
 struct WriteBuffer: public Buffer {
     explicit WriteBuffer(size_t size): Buffer(size)
     {
-        for (auto& buffer : this->buffers)
+        for (auto& buffer: this->buffers)
         {
-            CHECK_NEG_ERROR(posix_memalign((void**) &buffer, 4096, size * TUPLE_SIZE));
+            buffer.allocate(size);
         }
-        this->activeBuffer = this->buffers[this->bufferIndex];
+        this->activeBuffer = this->buffers[this->bufferIndex].get();
     }
     DISABLE_COPY(WriteBuffer);
     DISABLE_MOVE(WriteBuffer);
-    ~WriteBuffer()
-    {
-        for (auto& buffer : this->buffers)
-        {
-            free(buffer);
-        }
-    }
 
     void store(const Record& record)
     {
@@ -174,10 +168,10 @@ struct WriteBuffer: public Buffer {
     void swapBuffer()
     {
         this->bufferIndex = 1 - this->bufferIndex;
-        this->activeBuffer = this->buffers[this->bufferIndex];
+        this->activeBuffer = this->buffers[this->bufferIndex].get();
     }
 
     Record* activeBuffer;
     size_t bufferIndex = 0;
-    Record* buffers[2];
+    HugePageBuffer<Record> buffers[2];
 };

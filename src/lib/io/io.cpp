@@ -78,14 +78,14 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
         auto to_handle = std::min(buffer_size, count - processed);
         auto* buffer = outBuffer.getActiveBuffer();
 
-        Timer timerCopy;
+//        Timer timerCopy;
 #pragma omp parallel for num_threads(10)
         for (size_t i = 0; i < to_handle; i++)
         {
             buffer[i] = records[sorted[processed + i].index];
         }
         processed += to_handle;
-        timerCopy.print("Sequential copy");
+//        timerCopy.print("Sequential copy");
 
         size_t written = notifyQueue.pop();
         outBuffer.processedCount += written;
@@ -96,8 +96,6 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
     notifyQueue.pop();
     ioQueue.push(IORequest::last());
     ioThread.join();
-
-    std::cerr << "Buffer IO: " << bufferIOWrite << std::endl;
 }
 
 void write_mmap(const Record* __restrict__ records, const uint32_t* __restrict__ sorted, ssize_t count,

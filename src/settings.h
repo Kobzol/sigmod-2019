@@ -6,7 +6,7 @@
 #define LIMIT_IN_MEMORY_SORT GIB(24)
 
 // number of records to buffer before writing to the output
-#define WRITE_BUFFER_COUNT (400 * 4096ull)
+#define WRITE_BUFFER_COUNT (1024 * 1024ull)
 
 #ifdef REAL_RUN
     #define WRITE_LOCATION (std::string("/output-disk"))
@@ -23,7 +23,7 @@
 #define SORT_GROUP_COUNT 256
 
 // buffer sizes for external merges
-#define MERGE_READ_COUNT (1024 * 256)
+#define MERGE_READ_COUNT (1024 * 512)
 #define MERGE_INITIAL_READ_COUNT (4 * 1024 * 512)
 #define MERGE_READ_BUFFER_COUNT (std::max(MERGE_INITIAL_READ_COUNT, MERGE_READ_COUNT))
 #define MERGE_WRITE_BUFFER_COUNT (1024 * 512)

@@ -101,6 +101,7 @@ void merge_files(std::vector<FileRecord>& files,
     FileWriter writer(outfile.c_str());
 
     bufferIORead = 0;
+    bufferIOWrite = 0;
     merge_range(buffers, totalSize, 0, writer);
 
     std::cerr << "Merge read IO: " << bufferIORead << std::endl;

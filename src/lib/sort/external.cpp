@@ -12,6 +12,7 @@
 #include "merge.h"
 #include "../sync.h"
 #include "../io/worker.h"
+#include "../memory.h"
 
 #include <vector>
 #include <queue>
@@ -54,13 +55,11 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     std::thread ioThread = ioWorker(ioQueue);
 
     auto offsetSize = std::max(EXTERNAL_SORT_PARTIAL_COUNT, EXTERNAL_SORT_INMEMORY_COUNT);
-    auto bufferSize = 2 * offsetSize * TUPLE_SIZE;
-    auto buffer = static_cast<Record*>(mmap64(nullptr, bufferSize,
-                                              PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
-    CHECK_NEG_ERROR((ssize_t) buffer);
+    auto bufferSize = 2 * offsetSize;
+    HugePageBuffer<Record> buffer(bufferSize);
     Record* buffers[2] = {
-            buffer,
-            buffer + offsetSize
+            buffer.get(),
+            buffer.get() + offsetSize
     };
     size_t activeBuffer = overlapRanges.size() % 2;
 
@@ -79,6 +78,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         {
             auto& range = overlapRanges[r];
             notifyQueue.pop();
+            reader.dontneed(range.count(), range.start);
+
             bool lastPart = r == overlapRanges.size() - 1;
             if (!lastPart)
             {
@@ -126,8 +127,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
 
                 Timer timerWrite;
-                write_buffered(buffers[activeBuffer], sortBuffer.get(), range.count(), out,
-                               WRITE_BUFFER_COUNT, threads);
+                write_sequential_io(buffers[activeBuffer], sortBuffer.get(), range.count(), out, WRITE_BUFFER_COUNT,
+                        threads);
                 timerWrite.print("Write");
 
                 files.push_back(FileRecord{out, range.count()});
@@ -141,7 +142,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
 
     // active buffer contains the last merge part here
     // free up the second half of the buffer
-    CHECK_NEG_ERROR((ssize_t) mremap(buffer, bufferSize, EXTERNAL_SORT_INMEMORY_COUNT * TUPLE_SIZE, 0));
+    buffer.trim(EXTERNAL_SORT_INMEMORY_COUNT);
 
     externalInit.print("External init");
 
