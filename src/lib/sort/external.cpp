@@ -20,22 +20,32 @@
 #include <omp.h>
 #include <sys/uio.h>
 
+static std::vector<OverlapRange> createOverlapRanges(size_t count)
+{
+    std::vector<OverlapRange> overlapRanges;
+
+    size_t inmemory = std::min(count, static_cast<size_t>(EXTERNAL_SORT_INMEMORY_COUNT));
+    size_t disk = count - inmemory;
+
+    size_t offset = 0;
+    while (offset < disk)
+    {
+        size_t partialCount = std::min(disk - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
+        overlapRanges.emplace_back(offset, offset + partialCount, 0, false );
+        offset += partialCount;
+    }
+
+    overlapRanges.emplace_back(offset, count, 0, true );
+
+    return overlapRanges;
+}
+
 void sort_external(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
     Timer externalInit;
     size_t count = size / TUPLE_SIZE;
     std::vector<FileRecord> files;
-    size_t offset = 0;
-
-    std::vector<OverlapRange> overlapRanges;
-
-    while (offset < count)
-    {
-        size_t partialCount = std::min(count - offset, static_cast<size_t>(EXTERNAL_SORT_PARTIAL_COUNT));
-        OverlapRange range{ offset, offset + partialCount, 0 };
-        overlapRanges.push_back(range);
-        offset += partialCount;
-    }
+    std::vector<OverlapRange> overlapRanges = createOverlapRanges(count);
 
     SyncQueue<IORequest> ioQueue;
     SyncQueue<size_t> notifyQueue;
@@ -43,14 +53,16 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
 
     std::thread ioThread = ioWorker(ioQueue);
 
-    Record* buffers[2] = { nullptr, nullptr };
-    for (auto& buffer: buffers)
-    {
-        buffer = static_cast<Record*>(mmap64(nullptr, EXTERNAL_SORT_PARTIAL_COUNT * TUPLE_SIZE,
-                PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
-        CHECK_NEG_ERROR((ssize_t) buffer);
-    }
-    size_t activeBuffer = 0;
+    auto offsetSize = std::max(EXTERNAL_SORT_PARTIAL_COUNT, EXTERNAL_SORT_INMEMORY_COUNT);
+    auto bufferSize = 2 * offsetSize * TUPLE_SIZE;
+    auto buffer = static_cast<Record*>(mmap64(nullptr, bufferSize,
+                                              PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
+    CHECK_NEG_ERROR((ssize_t) buffer);
+    Record* buffers[2] = {
+            buffer,
+            buffer + offsetSize
+    };
+    size_t activeBuffer = overlapRanges.size() % 2;
 
     std::vector<MemoryReader> readers;
     std::vector<ReadBuffer> readBuffers;
@@ -60,8 +72,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
         ioQueue.push(IORequest(buffers[activeBuffer], overlapRanges[0].count(), overlapRanges[0].start,
                 &notifyQueue, &reader));
 
-        auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[EXTERNAL_SORT_PARTIAL_COUNT]);
-        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[EXTERNAL_SORT_PARTIAL_COUNT]);
+        auto sortBuffer = std::unique_ptr<SortRecord[]>(new SortRecord[offsetSize]);
+        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[offsetSize]);
 
         for (size_t r = 0; r < overlapRanges.size(); r++)
         {
@@ -97,7 +109,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             sort_records(buffers[activeBuffer], sortBuffer.get(), targets.get(), range.count(), threads);
             timer.print("Sort file");
 
-            if (lastPart)
+            if (range.memory)
             {
                 Timer timerPartCopy;
                 auto* __restrict__ source = buffers[activeBuffer];
@@ -109,8 +121,7 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
                 }
                 timerPartCopy.print("Last part copy");
             }
-
-            if (!lastPart)
+            else
             {
                 std::cerr << "Writing " << range.count() << " records to " << out << std::endl;
 
@@ -129,8 +140,8 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
     ioThread.join();
 
     // active buffer contains the last merge part here
-    // free up the second buffer
-    CHECK_NEG_ERROR(munmap(buffers[1 - activeBuffer], EXTERNAL_SORT_PARTIAL_COUNT * TUPLE_SIZE));
+    // free up the second half of the buffer
+    CHECK_NEG_ERROR((ssize_t) mremap(buffer, bufferSize, EXTERNAL_SORT_INMEMORY_COUNT * TUPLE_SIZE, 0));
 
     externalInit.print("External init");
 

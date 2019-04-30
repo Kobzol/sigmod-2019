@@ -18,19 +18,21 @@ struct FileRecord
 };
 
 struct OverlapRange {
-    OverlapRange(size_t start, size_t end, size_t offset): start(start), end(end), offset(offset)
+    OverlapRange(size_t start, size_t end, size_t offset, bool memory = true)
+    : start(start), end(end), offset(offset), memory(memory)
     {
 
     }
-
-    size_t start; // read address from input data
-    size_t end;   // end of iteration per thread
-    size_t offset = 0;  // current iteration per thread
 
     size_t count() const
     {
         return this->end - this->start;
     }
+
+    size_t start; // read address from input data
+    size_t end;   // end of iteration per thread
+    size_t offset = 0;  // current iteration per thread
+    bool memory;
 };
 
 struct GroupTarget
