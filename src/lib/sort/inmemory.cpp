@@ -9,6 +9,7 @@
 #include "../sync.h"
 #include "../compare.h"
 #include "merge.h"
+#include "../memory.h"
 
 #include <memory>
 #include <vector>
@@ -122,7 +123,7 @@ static void merge_inmemory(
 void sort_inmemory_overlapped(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
 {
     ssize_t count = size / TUPLE_SIZE;
-    auto buffer = std::unique_ptr<Record[]>(new Record[count]);
+    HugePageBuffer<Record> buffer(count);
 
     std::unique_ptr<SortRecord[]> sortedRecords[INMEMORY_OVERLAP_PARTS];
     std::vector<OverlapRange> ranges;
