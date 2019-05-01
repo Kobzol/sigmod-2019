@@ -23,7 +23,7 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
 {
     ssize_t count = size / TUPLE_SIZE;
 
-    auto buffer = std::unique_ptr<Record[]>(new Record[count]);
+    HugePageBuffer<Record> buffer(count);
     Timer timerLoad;
     MemoryReader reader(infile.c_str());
 
@@ -37,10 +37,10 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
     }
     timerLoad.print("Read");
 
-    auto indices = std::unique_ptr<uint32_t[]>(new uint32_t[count]);
+    HugePageBuffer<uint32_t> indices(count);
     {
-        auto output = std::unique_ptr<SortRecord[]>(new SortRecord[count]);
-        auto targets = std::unique_ptr<GroupTarget[]>(new GroupTarget[count]);
+        HugePageBuffer<SortRecord> output(count);
+        HugePageBuffer<GroupTarget> targets(count);
 
         Timer timerSort;
         sort_records(buffer.get(), output.get(), targets.get(), count, threads);
@@ -49,7 +49,7 @@ void sort_inmemory(const std::string& infile, size_t size, const std::string& ou
 #pragma omp parallel for num_threads(threads)
         for (ssize_t i = 0; i < count; i++)
         {
-            indices[i] = output[i].index;
+            indices.get()[i] = output.get()[i].index;
         }
     }
 
