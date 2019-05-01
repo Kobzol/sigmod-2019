@@ -106,6 +106,8 @@ struct ReadBuffer: public Buffer {
             this->offset = 0;
             bufferIORead += timerRead.get();
         }
+        else this->data.deallocate();
+
         return left;
     }
 

@@ -58,6 +58,12 @@ public:
         }
     }
 
+    void deallocate()
+    {
+        CHECK_NEG_ERROR(munmap(this->data, this->count * sizeof(T)));
+        this->data = nullptr;
+    }
+
 private:
     T* data = nullptr;
     size_t count = 0;
