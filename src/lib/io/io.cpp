@@ -78,18 +78,20 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
         auto to_handle = std::min(buffer_size, count - processed);
         auto* buffer = outBuffer.getActiveBuffer();
 
+        auto start = count - processed - to_handle;
+
 //        Timer timerCopy;
 #pragma omp parallel for num_threads(10)
         for (size_t i = 0; i < to_handle; i++)
         {
-            buffer[i] = records[sorted[processed + i].index];
+            buffer[i] = records[sorted[start + i].index];
         }
         processed += to_handle;
 //        timerCopy.print("Sequential copy");
 
         size_t written = notifyQueue.pop();
         outBuffer.processedCount += written;
-        ioQueue.push(IORequest::write(outBuffer.getActiveBuffer(), to_handle, outBuffer.processedCount, &notifyQueue,
+        ioQueue.push(IORequest::write(outBuffer.getActiveBuffer(), to_handle, start, &notifyQueue,
                 &writer));
         outBuffer.swapBuffer();
     }
