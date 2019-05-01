@@ -28,7 +28,7 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
 
     Timer timerMinMax;
     uint64_t minimum = 0;
-    uint64_t maximum = std::numeric_limits<uint32_t>::max();
+    uint64_t maximum = std::numeric_limits<uint8_t>::max();
 /*#pragma omp parallel for num_threads(threads / 4) reduction(min:minimum) reduction(max:maximum)
     for (ssize_t i = 0; i < count; i++)
     {
@@ -49,7 +49,7 @@ std::vector<GroupData> sort_records(const Record* __restrict__ input, SortRecord
 #pragma omp for
         for (ssize_t i = 0; i < count; i++)
         {
-            auto groupIndex = (bswap_32(*reinterpret_cast<const uint32_t*>(&input[i]))) >> shift;
+            auto groupIndex = (*reinterpret_cast<const uint8_t*>(&input[i])) >> shift;
             assert(groupIndex < GROUP_COUNT);
             targets[i].group = static_cast<uint32_t>(groupIndex);
             targets[i].index = static_cast<uint32_t>(counts[thread_id][groupIndex]++);

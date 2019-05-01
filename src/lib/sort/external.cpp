@@ -137,8 +137,10 @@ void sort_external(const std::string& infile, size_t size, const std::string& ou
             activeBuffer = 1 - activeBuffer;
         }
     }
+    Timer timerWait;
     ioQueue.push(IORequest::last());
     ioThread.join();
+    timerWait.print("Wait for read");
 
     // active buffer contains the last merge part here
     // free up the second half of the buffer

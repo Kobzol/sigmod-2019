@@ -10,7 +10,7 @@
 
 struct RadixTraitsRowSortRecord
 {
-    static const int nBytes = KEY_SIZE;
+    static const int nBytes = 9;
 
     int kth_byte(const SortRecord& x, int k) {
         return x.header[KEY_SIZE - 1 - k] & ((unsigned char) 0xFF);
@@ -21,7 +21,7 @@ struct RadixTraitsRowSortRecord
 };
 struct RadixTraitsRowRecord
 {
-    static const int nBytes = KEY_SIZE;
+    static const int nBytes = 9;
 
     int kth_byte(const Record& x, int k) {
         return x[KEY_SIZE - 1 - k] & ((unsigned char) 0xFF);
