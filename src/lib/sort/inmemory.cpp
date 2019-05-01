@@ -188,6 +188,7 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
     timerMerge.print("Merge");
 }
 
+template <typename T, bool HugePages=true>
 struct MemoryRegion {
     MemoryRegion() = default;
 
@@ -196,18 +197,24 @@ struct MemoryRegion {
 
     void alloc(size_t count)
     {
-        this->address = static_cast<Record*>(mmap64(nullptr, count * TUPLE_SIZE, PROT_READ | PROT_WRITE,
+        this->address = static_cast<T*>(mmap64(nullptr, count * sizeof(T), PROT_READ | PROT_WRITE,
                                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0));
         CHECK_NEG_ERROR((ssize_t) this->address);
-        CHECK_NEG_ERROR(madvise(this->address, count * TUPLE_SIZE, MADV_HUGEPAGE));
+        if (HugePages)
+        {
+            CHECK_NEG_ERROR(madvise(this->address, count * sizeof(T), MADV_HUGEPAGE));
+        }
         this->capacity = count;
     }
     void realloc(size_t count)
     {
-        this->address = static_cast<Record*>(mremap(this->address, this->capacity * TUPLE_SIZE, count * TUPLE_SIZE,
+        this->address = static_cast<T*>(mremap(this->address, this->capacity * sizeof(T), count * sizeof(T),
                 MREMAP_MAYMOVE));
         CHECK_NEG_ERROR((ssize_t) this->address);
-        CHECK_NEG_ERROR(madvise(this->address, count * TUPLE_SIZE, MADV_HUGEPAGE));
+        if (HugePages)
+        {
+            CHECK_NEG_ERROR(madvise(this->address, count * sizeof(T), MADV_HUGEPAGE));
+        }
         this->capacity = count;
     }
 
@@ -216,19 +223,19 @@ struct MemoryRegion {
         return this->count == this->capacity;
     }
 
-    void write(const Record& record)
+    void write(const T& record)
     {
         this->address[this->count++] = record;
     }
 
     void dealloc()
     {
-        CHECK_NEG_ERROR(munmap(this->address, this->capacity * TUPLE_SIZE));
+        CHECK_NEG_ERROR(munmap(this->address, this->capacity * sizeof(T)));
     }
 
     size_t count = 0;
     size_t capacity = 0;
-    Record* address = nullptr;
+    T* address = nullptr;
 };
 
 void sort_inmemory_distribute(const std::string& infile, size_t size, const std::string& outfile, size_t threads)
@@ -258,8 +265,14 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
     size_t ALLOC_SIZE = 4096;
     size_t REALLOC_SIZE = count / 256;
 
-    MemoryRegion regions[256];
+    MemoryRegion<Record> regions[256];
     for (auto& region: regions)
+    {
+        region.alloc(ALLOC_SIZE);
+    }
+
+    MemoryRegion<SortRecord> recordRegions[256];
+    for (auto& region: recordRegions)
     {
         region.alloc(ALLOC_SIZE);
     }
@@ -306,11 +319,23 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
                     if (value >= start && value < end)
                     {
                         auto& region = regions[value];
+                        SortRecord record;
+                        record.header = get_header(active[i]);
+                        record.index = region.count;
+
                         if (EXPECT(region.is_full(), 0))
                         {
-                            region.realloc(region.capacity + (REALLOC_SIZE));
+                            region.realloc(region.capacity + REALLOC_SIZE);
                         }
                         region.write(active[i]);
+
+                        auto& recordRegion = recordRegions[value];
+                        if (EXPECT(recordRegion.is_full(), 0))
+                        {
+                            recordRegion.realloc(recordRegion.capacity + REALLOC_SIZE);
+                        }
+
+                        recordRegion.write(record);
                     }
                 }
             }
@@ -332,9 +357,9 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
 #pragma omp parallel for num_threads(10) schedule(dynamic)
     for (size_t i = 0; i < 256; i++)
     {
-        if (regions[i].count)
+        if (recordRegions[i].count)
         {
-            msd_radix_sort(regions[i].address, regions[i].count);
+            msd_radix_sort(recordRegions[i].address, recordRegions[i].count);
         }
     }
     timerSort.print("Sort");
@@ -344,23 +369,36 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
     MmapWriter writer(outfile.c_str(), count);
     auto* __restrict__ target = writer.get_data();
 
+    size_t unmapTime = 0;
     for (int i = 0; i < 256; i++)
     {
         ssize_t regionCount = regions[i].count;
         if (regionCount)
         {
+            SortRecord* src = recordRegions[i].address;
 //            Timer timerWrite;
 #pragma omp parallel for num_threads(threads / 2)
             for (ssize_t j = 0; j < regionCount; j++)
             {
-                target[j] = regions[i].address[j];
+                target[j] = regions[i].address[src[j].index];
             }
+            Timer timerUnmap;
             regions[i].dealloc();
+            recordRegions[i].dealloc();
+            unmapTime += timerUnmap.get();
             target += regionCount;
 //            timerWrite.print("write");
         }
-        else regions[i].dealloc();
+        else
+        {
+            Timer timerUnmap;
+            regions[i].dealloc();
+            recordRegions[i].dealloc();
+            unmapTime += timerUnmap.get();
+        }
     }
 
     timerFinish.print("Finish");
+
+    std::cerr << "Unmap regions: " << unmapTime << std::endl;
 }
