@@ -103,7 +103,7 @@ void write_sequential_io(const Record *records, const SortRecord *sorted, size_t
 void write_mmap(const Record* __restrict__ records, const uint32_t* __restrict__ sorted, ssize_t count,
         const std::string& output, size_t threads)
 {
-    MmapWriter writer(output.c_str(), count);
+    MmapWriter<false> writer(output.c_str(), count);
     auto* __restrict__ target = writer.get_data();
 
 #pragma omp parallel for num_threads(threads / 2)

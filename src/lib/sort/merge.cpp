@@ -99,6 +99,7 @@ void merge_files(std::vector<FileRecord>& files,
     size_t totalSize = size / TUPLE_SIZE;
 
     FileWriter writer(outfile.c_str());
+    writer.expect_sequential(totalSize, 0);
 
     bufferIORead = 0;
     bufferIOWrite = 0;

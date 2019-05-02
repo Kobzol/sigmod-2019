@@ -23,11 +23,11 @@
 #define SORT_GROUP_COUNT 256
 
 // buffer sizes for external merges
-#define MERGE_READ_COUNT (1024 * 512)
+#define MERGE_READ_COUNT (1024 * 650)
 #define MERGE_INITIAL_READ_COUNT (1024 * 1024)
 #define MERGE_READ_BUFFER_COUNT (std::max(MERGE_INITIAL_READ_COUNT, MERGE_READ_COUNT))
 #define MERGE_WRITE_BUFFER_COUNT (1024 * 512)
-#define MERGE_INMEMORY_SPLIT_PARTS 16
+#define MERGE_INMEMORY_SPLIT_PARTS 28
 
 // number of parts to split the read file into when doing inmemory overlapped sort
 #define INMEMORY_OVERLAP_PARTS 4

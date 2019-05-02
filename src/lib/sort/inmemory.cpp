@@ -140,6 +140,11 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
 
     SyncQueue<OverlapRange> queue;
 
+    MmapWriter<true>* writer;
+    std::thread populateThread([&writer, &outfile, count]() {
+        writer = new MmapWriter<true>(outfile.c_str(), count);
+    });
+
     std::thread readThread([&ranges, &queue, &buffer, &infile]() {
         MemoryReader reader(infile.c_str());
 
@@ -176,14 +181,16 @@ void sort_inmemory_overlapped(const std::string& infile, size_t size, const std:
 
     Timer timerMerge;
 
-    MmapWriter writer(outfile.c_str(), count);
-    auto* target = writer.get_data();
+    populateThread.join();
+    auto* target = writer->get_data();
 
 #pragma omp parallel for num_threads(threads) schedule(dynamic)
     for (size_t i = 0; i < mergeRanges.size(); i++)
     {
         merge_inmemory(buffer.get(), target, sortedRecords, mergeRanges[i], ranges, outfile);
     }
+
+    delete writer;
 
     timerMerge.print("Merge");
 }
@@ -361,7 +368,7 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
         offsets.push_back(offsets[offsets.size() - 1] + region.count);
     }
 
-    MmapWriter writer(outfile.c_str(), count);
+    MmapWriter<false> writer(outfile.c_str(), count);
     auto* __restrict__ target = writer.get_data();
 
     SyncQueue<std::pair<void*, size_t>> unmapQueue;
@@ -385,8 +392,8 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
 
             auto* __restrict__ writeTarget = target + offsets[i];
             SortRecord* src = recordRegions[i].address;
-#pragma omp parallel for num_threads(4)
-            for (ssize_t j = 0; j < recordRegions[i].count; j++)
+#pragma omp parallel for num_threads(5)
+            for (ssize_t j = 0; j < static_cast<ssize_t>(recordRegions[i].count); j++)
             {
                 writeTarget[j] = regions[i].address[src[j].index];
             }

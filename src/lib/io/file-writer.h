@@ -75,7 +75,7 @@ public:
                                         SYNC_FILE_RANGE_WAIT_BEFORE |
                                         SYNC_FILE_RANGE_WRITE |
                                         SYNC_FILE_RANGE_WAIT_AFTER));
-        CHECK_NEG_ERROR(posix_fadvise(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE, POSIX_FADV_DONTNEED));
+        CHECK_NEG_ERROR(posix_fadvise64(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE, POSIX_FADV_DONTNEED));
     }
 
     void write_discard(Record* record, size_t count, ssize_t offset, size_t previousCount, size_t discardWindow)
@@ -94,6 +94,11 @@ public:
         {
             this->discard(previousCount, discardOffset);
         }
+    }
+
+    void expect_sequential(size_t count, size_t offset)
+    {
+        CHECK_NEG_ERROR(posix_fadvise64(this->file, offset * TUPLE_SIZE, count * TUPLE_SIZE, POSIX_FADV_SEQUENTIAL));
     }
 
 private:

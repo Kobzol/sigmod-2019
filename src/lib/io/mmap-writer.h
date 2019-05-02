@@ -9,7 +9,7 @@
 #include "../util.h"
 #include "../record.h"
 
-
+template <bool Populate = false>
 class MmapWriter {
 public:
     explicit MmapWriter(const char* path, size_t count): size(count * TUPLE_SIZE)
@@ -20,7 +20,12 @@ public:
         CHECK_NEG_ERROR(fd);
         CHECK_NEG_ERROR(ftruncate64(fd, this->size));
 
-        this->data = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_WRITE, MAP_SHARED, fd, 0));
+        if (Populate)
+        {
+            this->data = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_WRITE,
+                    MAP_SHARED | MAP_POPULATE, fd, 0));
+        }
+        else this->data = reinterpret_cast<Record*>(mmap64(nullptr, this->size, PROT_WRITE, MAP_SHARED, fd, 0));
         CHECK_NEG_ERROR((ssize_t) this->data);
         CHECK_NEG_ERROR(fclose(file));
     }
