@@ -353,52 +353,50 @@ void sort_inmemory_distribute(const std::string& infile, size_t size, const std:
 
     timerDistribute.print("Distribute");
 
+    std::vector<uint32_t> offsets;
+    offsets.push_back(0);
+
+    for (auto& region: regions)
+    {
+        offsets.push_back(offsets[offsets.size() - 1] + region.count);
+    }
+
+    MmapWriter writer(outfile.c_str(), count);
+    auto* __restrict__ target = writer.get_data();
+
+    SyncQueue<std::pair<void*, size_t>> unmapQueue;
+
+    std::thread unmapThread([&unmapQueue]() {
+        while (true)
+        {
+            auto job = unmapQueue.pop();
+            if (job.first == nullptr) break;
+            CHECK_NEG_ERROR(munmap(job.first, job.second));
+        }
+    });
+
     Timer timerSort;
-#pragma omp parallel for num_threads(10) schedule(dynamic)
+#pragma omp parallel for num_threads(8) schedule(dynamic)
     for (size_t i = 0; i < 256; i++)
     {
         if (recordRegions[i].count)
         {
             msd_radix_sort(recordRegions[i].address, recordRegions[i].count);
+
+            auto* __restrict__ writeTarget = target + offsets[i];
+            SortRecord* src = recordRegions[i].address;
+#pragma omp parallel for num_threads(4)
+            for (ssize_t j = 0; j < recordRegions[i].count; j++)
+            {
+                writeTarget[j] = regions[i].address[src[j].index];
+            }
         }
+
+        unmapQueue.push({ regions[i].address, regions[i].capacity * sizeof(Record) });
+        unmapQueue.push({ recordRegions[i].address, recordRegions[i].capacity * sizeof(SortRecord) });
     }
     timerSort.print("Sort");
 
-    Timer timerFinish;
-
-    MmapWriter writer(outfile.c_str(), count);
-    auto* __restrict__ target = writer.get_data();
-
-    size_t unmapTime = 0;
-    for (int i = 0; i < 256; i++)
-    {
-        ssize_t regionCount = regions[i].count;
-        if (regionCount)
-        {
-            SortRecord* src = recordRegions[i].address;
-//            Timer timerWrite;
-#pragma omp parallel for num_threads(threads / 2)
-            for (ssize_t j = 0; j < regionCount; j++)
-            {
-                target[j] = regions[i].address[src[j].index];
-            }
-            Timer timerUnmap;
-            regions[i].dealloc();
-            recordRegions[i].dealloc();
-            unmapTime += timerUnmap.get();
-            target += regionCount;
-//            timerWrite.print("write");
-        }
-        else
-        {
-            Timer timerUnmap;
-            regions[i].dealloc();
-            recordRegions[i].dealloc();
-            unmapTime += timerUnmap.get();
-        }
-    }
-
-    timerFinish.print("Finish");
-
-    std::cerr << "Unmap regions: " << unmapTime << std::endl;
+    unmapQueue.push({ nullptr, 0 });
+    unmapThread.join();
 }
